@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import subprocess
+from time import time, sleep
+from threading import Thread
+from copy import deepcopy
+from pathlib import Path
+from enum import Enum
+from locale import getpreferredencoding
+
+import yaml
+from crossref.restful import Works, Etiquette
+
+version_number = "0.1"
+
+my_etiquette = Etiquette('PeepLaTeX',
+                         version_number,
+                         'https://github.com/yongrenjie',
+                         'yongrenjie@gmail.com')
+article_list = []
+last_list = []
+current_list = None
+command_history = []
+
+
+class ExitCode(Enum):
+    SUCCESS = 0
+    FAILURE = 1
+    WAITING = 2
+
+
+def read(fname):
+    """
+    Reads a YAML file into the list of dictionaries article_list.
+    """
+    global article_list
+    global current_list
+    fname = Path(fname).resolve()
+    try:
+        with open(fname, "r") as fp:
+            print("Loading library {}... ".format(fname), end="", flush=True)
+            article_list = list(yaml.safe_load_all(fp))
+            print("done")
+    except FileNotFoundError:
+        print("error: file {} not found".format(fname))
+        return ExitCode.FAILURE
+    else:
+        current_list = fname
+        return ExitCode.SUCCESS
+
+
+def write(fname):
+    """
+    Writes the list of dictionaries article_list to a YAML file.
+    """
+    fname = Path(fname).resolve()
+    with open(fname, "w") as fp:
+        yaml.dump_all(article_list, fp)
+    return ExitCode.SUCCESS
+
+
+def openref(doi, type="pdf"):
+    global current_list
+    # get the name of the pdf / website
+    if type in ["p", "s", "pdf", "si"]:
+        fname = current_list.parent / type / "{}.pdf".format(doi).replace("/","#")
+        # error out if it doesn't exist
+        if not fname.exists():
+            print("error: file {} not found".format(fname))
+            return ExitCode.FAILURE
+    elif type in ["w", "web"]:
+        fname = "https://doi.org/{}".format(doi)
+    else:
+        raise RuntimeError("AGH!!!")
+    # open(1) is really fast, so we can block using subprocess.run()
+    # however if we expand this to accept a range of references, and there are many of them
+    # to open, then we may need to consider using a non-blocking version like Popen()
+    # or something else like concurrency.futures...
+    try:
+        subprocess.run(["open", fname], check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        ec = sp_error(e)
+    else:
+        ec = ExitCode.SUCCESS
+    return ec
+
+
+def zzzsleep(time):
+    """
+    For debugging purposes
+    """
+    t = float(time)
+    print("going to zzz for {} seconds...".format(t))
+    sleep(t)
+    print("\nzzz... woke up... exiting")
+    print_prompt()
+
+
+def list_articles(articles, type="long"):
+    """
+    Print prettified output of a given list of articles.
+     type="long": prints every article.
+     type="short": prints first 2 and last 2.
+    """
+    # Exit if article list is empty
+    if articles == []:
+        print("no articles found")
+        return
+    # Make a copy first...
+    l = deepcopy(articles)
+    # And set the last list, making a copy again...
+    global last_list
+    last_list = deepcopy(articles)
+
+    # Get field sizes
+    layout_str = "{0:<{1}}{2:{3}}{4:<{5}}{6:{7}}{8:{9}}"
+    fss = get_fs(l)
+    number_fs, author_fs, year_fs, journal_fs, title_fs = fss
+
+    # Print header
+    print_list_header(layout_str, fss)
+
+    # Print all article contents
+    if len(articles) <= 4 or type == "long":
+        for i, a in enumerate(l, start=1):
+            list_one_article(i, a, layout_str, fss)
+        return ExitCode.SUCCESS
+    elif type == "short":
+        n = len(articles)
+        list_one_article(1, l[0], layout_str, fss)
+        list_one_article(2, l[1], layout_str, fss)
+        print_dots(layout_str, fss)
+        list_one_article(n - 1, l[n - 2], layout_str, fss)
+        list_one_article(n, l[n - 1], layout_str, fss)
+        return ExitCode.SUCCESS
+    else:
+        raise RuntimeError("ARGHH!")
+
+
+def print_list_header(layout_str, fss):
+    """
+    Print the header.
+    """
+    # unpack field sizes
+    number_fs, author_fs, year_fs, journal_fs, title_fs = fss
+    # black row
+    print()
+    # header row
+    print(layout_str.format("#", number_fs,
+                            "Authors", author_fs,
+                            "Year", year_fs,
+                            "Journal", journal_fs,
+                            "Title & DOI", title_fs))
+    # a horizontal line
+    print("-" * (number_fs + author_fs + year_fs + journal_fs + title_fs))
+
+
+def list_one_article(i, a, layout_str, fss):
+    """
+    Print one article.
+     i          - the number in front.
+     a          - the article
+     layout_str - the format string.
+     fss        - tuple of field sizes: (number, author, year, journal, title)
+    """
+    # unpack field sizes
+    number_fs, author_fs, year_fs, journal_fs, title_fs = fss
+    # generate volume info
+    volinfo = vol_info(a)
+    # print the first round of information
+    first_author = a["authors"].pop(0)
+    print(layout_str.format(i, number_fs,
+                            auth_fmt(first_author, style="display"), author_fs,
+                            a["year"], year_fs,
+                            a["journal_short"].replace(".",""), journal_fs,
+                            a["title"][:title_fs], title_fs))
+    # cut off the first author
+    a["title"] = a["title"][title_fs:]
+    # if there is still information to be printed, print it
+    while any([a["authors"] != [],
+               a["title"] != "",
+               a["doi"] != "",
+               volinfo != ""]):
+        # get an author if there is one
+        try:
+            next_author = a["authors"].pop(0)
+        except IndexError:
+            next_author = ""
+        # replace the title with the DOI if the title has been printed and DOI hasn't
+        if a["title"] == "" and a["doi"] != "":
+            a["title"] = a["doi"]
+            a["doi"] = ""
+        print(layout_str.format("", number_fs,
+                                auth_fmt(next_author, style="display"), author_fs,
+                                "", year_fs,
+                                volinfo, journal_fs,
+                                a["title"][:title_fs], title_fs))
+        a["title"] = a["title"][title_fs:]
+        volinfo = ""
+    # empty line (for readability?)
+    print()
+
+
+def print_dots(layout_str, fss):
+    """
+    Prints dots.
+    """
+    # unpack field sizes
+    number_fs, author_fs, year_fs, journal_fs, title_fs = fss
+    # header row
+    print(layout_str.format("...", number_fs,
+                            "...", author_fs,
+                            "...", year_fs,
+                            "...", journal_fs,
+                            "...", title_fs))
+    print()
+
+
+def get_fs(l):
+    """
+    Calculates appropriate field sizes for the list output.
+    I tried caching this information in the article entry, but it makes virtually zero
+    difference to the runtime even for a library of 1400 articles, and it adds extra time
+    for reading/writing from/to disk (for reading in 1400 articles, the time taken increased
+    from ca 2.4 -> 2.7 seconds).
+    It's also a mess, because that means you'd have to remember to cache the information every
+    time you change the metadata.
+    """
+    total_columns = os.get_terminal_size().columns
+    spaces = 2
+    number_fs = len(str(len(l))) + spaces
+    author_fs = max(max(max(len(auth_fmt(auth, style="display")) for auth in art["authors"]) for art in l),
+                    len("Authors")
+                    ) + spaces
+    year_fs = 4 + spaces
+    journal_fs = max(max(len(art["journal_short"].replace(".","")) for art in l),
+                     max(len(vol_info(art)) for art in l),
+                     len("Journal info")
+                     ) + spaces
+    # we try to auto-size this column to take up the rest of the terminal,
+    # to make optimal use of space
+    title_fs = total_columns - number_fs - author_fs - year_fs - journal_fs
+    if title_fs < 40:
+        # but if it's dangerously close to the length of a typical DOI,
+        # we should make sure that there is enough space for the DOIs.
+        title_fs = max(title_fs, max(len(a["doi"]) for a in l))
+    return (number_fs, author_fs, year_fs, journal_fs, title_fs)
+
+
+def auth_fmt(author, style):
+    """
+    Prettify author names.
+    """
+    # Return empty string for any Falsy value
+    if not author:
+        return ""
+    family_name = author["family"]
+    given_names = author["given"]
+    # Jonathan R. J. Yong -> JRJ Yong
+    if style == "display":
+        return "".join(n[0] for n in given_names.split()) + " " + author["family"]
+    # Otherwise just return the name as a string
+    else:
+        return given_names + " " + family_name
+
+
+def vol_info(article):
+    """
+    Returns the string "vol (issue), page-page", or "vol, page-page" if
+    no issue number is present.
+    """
+    if "issue" in article:
+        return "{} ({}), {}".format(article["volume"],
+                                    article["issue"],
+                                    article["page"])
+    else:
+        return "{}, {}".format(article["volume"],
+                               article["page"])
+
+
+def print_prompt():
+    prompt = "peep > "
+    print(prompt, end="", flush=True)
+
+
+def main():
+    # Try to load db.yaml from sys.argv[1], or current directory
+    # In principle this should be done with argparse
+    global article_list
+    if len(sys.argv) > 1:
+        if sys.argv[1][0] != "/":
+            p = Path(os.getcwd()) / sys.argv[1]
+        else:
+            p = Path(sys.argv[1])
+    else:
+        p = Path(os.getcwd())
+    # Check for a db.yaml file inside and load it if found
+    db = p / "db.yaml"
+    if db.exists():
+        read(db)
+        list_articles(article_list, type="short")
+    else:
+        print("Default database not found. Load one with 'r db.yaml'.")
+    # Print help
+    print_help()
+    # Start the REPL
+    print_prompt()
+    for command in sys.stdin:
+        # save any non-empty commands
+        if command.strip() != "":
+            command_history.append(command)
+        # remove anything after a #
+        command = command.split("#")[0]
+        # split the rest
+        x = command.split()
+        if x:
+            result = parse(x)
+            print(result)
+        print_prompt()
+    print()
+
+
+def parse(cmd):
+    global last_list
+    global article_list
+    # QUIT
+    if cmd[0] == 'q':
+        sys.exit(0)
+    # HELP
+    if cmd[0] == 'h':
+        ec = print_help()
+    # READ from yaml
+    elif cmd[0] == 'r':
+        try:
+            ec = read(cmd[1])
+        except IndexError:
+            ec = error("no filename given")
+    # WRITE to yaml
+    elif cmd[0] == 'w':
+        try:
+            ec = write(cmd[1])
+        except IndexError:
+            ec = error("no filename given")
+    # LIST available articles
+    elif cmd[0] == 'l':
+        ec = list_articles(article_list)
+    # OPEN an article
+    elif cmd[0] == 'o':
+        # Get reference number
+        try:
+            refno = int(cmd[1])
+        except ValueError:
+            ec = error("invalid reference number {}".format(refno))
+        except IndexError:
+            ec = error("no reference number given")
+        else:
+            # Get form of reference desired
+            if len(cmd) == 2:
+                type = "pdf"
+            elif len(cmd) == 3:
+                type = cmd[2]
+            # call openref()
+            try:
+                ec = openref(last_list[refno - 1]["doi"], type=type)
+            except IndexError:
+                ec = error("reference number {} out of range".format(refno))
+    # Debugging tests
+    elif cmd[0] == 'sleep':
+        Thread(target=zzzsleep, args=(cmd[1],)).start()
+        ec = ExitCode.WAITING
+    elif cmd[0] == 'check':
+        print(article_list)
+        ec = ExitCode.SUCCESS
+    # Fallback error
+    else:
+        ec = error("not a valid cmd: {}".format(cmd[0]))
+
+    return ec
+
+
+def error(msg):
+    """
+    Generic error printer.
+    """
+    print("error: {}".format(msg))
+    return ExitCode.FAILURE
+
+
+def sp_error(e):
+    """
+    Wrapper around error() in the case of subprocess.CalledProcessError.
+     e is the exception.
+    """
+    sp_message = e.stderr.decode(getpreferredencoding()).strip()
+    error("{} returned {} with message '{}'".format(e.args[0],
+                                                    e.returncode,
+                                                    sp_message))
+    return ExitCode.FAILURE
+
+
+def print_help():
+    print("/---------------------------------------------------------------\\")
+    print("| PeepLaTeX v{:<51}|".format(version_number))
+    print("| Common commands:                                              |")
+    print("| ----------------                                              |")
+    print("| r - read database     l - list papers        o - open a paper |")
+    print("| c - get a citation    h - print this again   q - quit         |")
+    print("\\---------------------------------------------------------------/")
+    return ExitCode.SUCCESS
+
+
+if __name__ == "__main__":
+    main()
