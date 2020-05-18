@@ -278,25 +278,13 @@ def zzzsleep(time):
     print("\nzzz... woke up... exiting\n")
 
 
-#### Internal tools for error reporting
+#### Internal tool for error reporting
 
 def _error(msg):
     """
     Generic error printer.
     """
     print("error: {}".format(msg))
-    return ExitCode.FAILURE
-
-
-def _errorSP(e):
-    """
-    Wrapper around _error() in the case of subprocess.CalledProcessError.
-     e is the exception.
-    """
-    sp_message = e.stderr.decode(getpreferredencoding()).strip()
-    _error("{} returned {} with message '{}'".format(e.args[0],
-                                                    e.returncode,
-                                                    sp_message))
     return ExitCode.FAILURE
 
 
@@ -470,6 +458,7 @@ def _parseRefNo(s):
     else:
         return t
 
+
 #### Internal tool for opening PDFs / DOI URLs
 
 def _openDOIType(refno, format):
@@ -500,8 +489,8 @@ def _openDOIType(refno, format):
     # Open the thing, error out if it can't be found
     try:
         subprocess.run(["open", fname], check=True, capture_output=True)
-    except subprocess.CalledProcessError as e:
-        ec = _errorSP(e)
+    except subprocess.CalledProcessError:
+        return _error("ref {}: file {} could not be opened".format(refno, fname))
     else:
         ec = ExitCode.SUCCESS
     return ec
