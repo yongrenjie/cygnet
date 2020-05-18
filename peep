@@ -65,6 +65,10 @@ class peepShell(cmd.Cmd):
         wrongCmd = line.split()[0]
         _error("command '{}' unrecognised".format(wrongCmd))
 
+    def emptyline(self):
+        # do nothing
+        pass
+
     # Functions
     def do_q(self, arg):       # QUIT
         """
@@ -104,18 +108,18 @@ class peepShell(cmd.Cmd):
         Any arguments are discarded. (For now.)
         """
         global article_list
-        list_articles(article_list)
+        listArticles(article_list)
 
     def do_o(self, arg):       # OPEN
         """
         Opens one or more references in the form of PDF, SI, or Web.
         Usage: o [refno] [format]
-          [refno]: integer, or range of integers (inclusive). Multiple refnos can be
-                   concatenated with commas (not spaces).
-          [format]: "p", "s", or "w". Multiple formats can be concatenated directly
-                    or with commas (no spaces). Defaults to "p" if not specified.
+          [refno]: integer, or range of integers X-Y (inclusive). Multiple refnos can
+                   be concatenated with commas or spaces.
+          [format]: "p", "s", or "w". Multiple formats can be concatenated directly,
+                   with commas, or with spaces. Defaults to "p" if not specified.
         """
-        openref(arg.split())
+        openRef(arg.split())
 
     # debugging tests
     def do_sleep(self, arg):
@@ -187,7 +191,7 @@ def write(argls):
 
 
 @timedeco
-def list_articles(articles, type="long"):
+def listArticles(articles, type="long"):
     """
     Print prettified output of a given list of articles.
      type="long": prints every article.
@@ -199,9 +203,6 @@ def list_articles(articles, type="long"):
         return
     # Make a copy first...
     l = deepcopy(articles)
-    # And set the last list, making a copy again...
-    global last_list
-    last_list = deepcopy(articles)
 
     # Get field sizes
     layout_str = "{0:<{1}}{2:{3}}{4:<{5}}{6:{7}}{8:{9}}"
@@ -212,48 +213,56 @@ def list_articles(articles, type="long"):
     _printListHead(layout_str, fss)
 
     # Print all article contents
-    if len(articles) <= 4 or type == "long":
+    if len(l) <= 4 or type == "long":
         for i, a in enumerate(l, start=1):
-            _listArticle(i, a, layout_str, fss)
+            _listOneArticle(i, a, layout_str, fss)
         return ExitCode.SUCCESS
     elif type == "short":
-        n = len(articles)
-        _listArticle(1, l[0], layout_str, fss)
-        _listArticle(2, l[1], layout_str, fss)
+        n = len(l)
+        _listOneArticle(1, l[0], layout_str, fss)
+        _listOneArticle(2, l[1], layout_str, fss)
         _printDots(layout_str, fss)
-        _listArticle(n - 1, l[n - 2], layout_str, fss)
-        _listArticle(n, l[n - 1], layout_str, fss)
+        _listOneArticle(n - 1, l[n - 2], layout_str, fss)
+        _listOneArticle(n, l[n - 1], layout_str, fss)
         return ExitCode.SUCCESS
     else:
         raise RuntimeError("ARGHH!")
 
 
 @timedeco
-def openref(argls):
+def openRef(argls):
     """
     Opens one or more references, in the form of PDF, SI, or Web.
     """
     global article_list
     global current_db_path
-    # Get reference number(s)
+    # Preprocess argls, converting ["1", "2", "3", "p"] -> ["1,2,3,", "p"]
+    argstr = ",".join(argls)
+    # Find the first character in argstr that isn't [0-9,-]
+    x = next((i for i, c in enumerate(argstr) if c not in "1234567890,-"), len(argstr))
+    # Then repackage them
+    argRefno = argstr[:x].rstrip(",")
+    argFormat = argstr[x:].replace(",","")
+
+    # Parse reference number(s)
     try:
-        refnos = _parseRefNo(argls[0])
+        refnos = _parseRefNo(argRefno)
     except IndexError:
         return _error("no reference number given")
     else:
         # Check the returned value
         ls = len(article_list)
         if refnos is None or any(r > ls for r in refnos):
-            return _error("invalid reference number '{}' given".format(argls[0]))
-    # Get desired format(s)
+            return _error("invalid reference number(s) '{}' given".format(argRefno))
+    # Parse format(s)
     try:
-        formats = list(argls[1])
+        formats = list(argFormat)
     except IndexError:
         formats = ['p']  # if no format specified, assume pdf
     else:
         # Check for invalid formats
         if any([i not in list("psw") for i in formats]):
-            return _error("invalid format '{}' given".format(argls[1]))
+            return _error("invalid format(s) '{}' given".format(argFormat))
 
     # Open the references
     # generator object
@@ -308,7 +317,7 @@ def _printListHead(layout_str, fss):
     print("-" * (number_fs + author_fs + year_fs + journal_fs + title_fs))
 
 
-def _listArticle(i, a, layout_str, fss):
+def _listOneArticle(i, a, layout_str, fss):
     """
     Print one article.
      i          - the number in front.
@@ -372,14 +381,16 @@ def _printDots(layout_str, fss):
 def _getFS(l):
     """
     Calculates appropriate field sizes for the list output.
+
     I tried caching this information in the article entry, but it makes virtually zero
-    difference to the runtime even for a library of 1400 articles, and it adds extra time
-    for reading/writing from/to disk (for reading in 1400 articles, the time taken increased
-    from ca 2.4 -> 2.7 seconds).
+     difference to the runtime even for a library of 1400 articles, and it adds extra time
+     for reading/writing from/to disk (for reading in 1400 articles, the time taken increased
+     from ca 2.4 -> 2.7 seconds).
     It's also a mess, because that means you'd have to remember to cache the information every
-    time you change the metadata.
+     time you change the metadata.
+    Unfortunately you also can't use functools.lru_cache with this, because in general it will
+     expect a dictionary as the argument, which isn't hashable.
     """
-    total_columns = os.get_terminal_size().columns
     spaces = 2
     number_fs = len(str(len(l))) + spaces
     author_fs = max(max(max(len(_fmtAuthor(auth, style="display")) for auth in art["authors"]) for art in l),
@@ -390,13 +401,11 @@ def _getFS(l):
                      max(len(_fmtVolInfo(art)) for art in l),
                      len("Journal info")
                      ) + spaces
-    # we try to auto-size this column to take up the rest of the terminal,
-    # to make optimal use of space
-    title_fs = total_columns - number_fs - author_fs - year_fs - journal_fs
-    if title_fs < 40:
-        # but if it's dangerously close to the length of a typical DOI,
-        # we should make sure that there is enough space for the DOIs.
-        title_fs = max(title_fs, max(len(a["doi"]) for a in l))
+    # either use up the remaining space, or extend to the end of the longest title
+    total_columns = os.get_terminal_size().columns
+    title_fs = min(total_columns - number_fs - author_fs - year_fs - journal_fs,
+                   max(len(a["title"]) for a in l))
+
     return (number_fs, author_fs, year_fs, journal_fs, title_fs)
 
 
@@ -475,12 +484,12 @@ def _openDOIType(refno, format):
         fname = current_db_path.parent / "pdf" / "{}.pdf".format(doi).replace("/","#")
         fname = fname.resolve()
         if not fname.exists():
-            return _error("ref {}: file {} not found".format(refno, fname))
+            return _error("ref {} (p): file {} not found".format(refno, fname))
     elif format == 's':
         fname = current_db_path.parent / "si" / "{}.pdf".format(doi).replace("/","#")
         fname = fname.resolve()
         if not fname.exists():
-            return _error("ref {}: file {} not found".format(refno, fname))
+            return _error("ref {} (s): file {} not found".format(refno, fname))
     elif format == 'w':
         fname = "https://doi.org/{}".format(doi)
     else:
