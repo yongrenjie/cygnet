@@ -22,10 +22,9 @@ my_etiquette = Etiquette('PeepLaTeX',
                          version_number,
                          'https://github.com/yongrenjie',
                          'yongrenjie@gmail.com')
+
 article_list = []
-last_list = []
 current_db_path = None     # Path object pointing to the current database
-command_history = []
 
 
 class ExitCode(Enum):
@@ -69,12 +68,14 @@ class peepShell(cmd.Cmd):
         # do nothing
         pass
 
-    # Functions
+    # Functions with associated synonyms 
+
     def do_q(self, arg):       # QUIT
         """
         Quit.
         """
         sys.exit(0)
+    do_quit = do_q
 
     def do_EOF(self, arg):     # QUIT alternative
         print()
@@ -85,6 +86,7 @@ class peepShell(cmd.Cmd):
         Print help.
         """
         print(self.intro)
+    do_help = do_h
 
     def do_r(self, arg):       # READ 
         """
@@ -93,6 +95,7 @@ class peepShell(cmd.Cmd):
           [fname]: absolute or relative path to the desired input file.
         """
         read(arg.split())
+    do_read = do_r
 
     def do_w(self, arg):       # WRITE
         """
@@ -101,6 +104,7 @@ class peepShell(cmd.Cmd):
           [fname]: absolute or relative path to the desired output file.
         """
         write(arg.split())
+    do_write = do_w
 
     def do_l(self, arg):       # LIST
         """
@@ -109,6 +113,8 @@ class peepShell(cmd.Cmd):
         """
         global article_list
         listArticles(article_list)
+    do_ls = do_l
+    do_list = do_l
 
     def do_o(self, arg):       # OPEN
         """
@@ -120,11 +126,14 @@ class peepShell(cmd.Cmd):
                    with commas, or with spaces. Defaults to "p" if not specified.
         """
         openRef(arg.split())
+    do_op = do_o
+    do_open = do_o
 
     # debugging tests
     def do_sleep(self, arg):
         Thread(target=zzzsleep, args=(arg.split()[0],)).start()
     def do_check(self, arg):
+        global article_list
         print(article_list)
 
 
@@ -175,18 +184,28 @@ def write(argls):
     """
     Writes the list of dictionaries article_list to a YAML file.
     """
+    global article_list
+    # Determine output location
     try:
         fname = Path(argls[0]).expanduser().resolve()
     except IndexError:
+        global current_db_path
         if current_db_path is not None:
             fname = current_db_path
         else:
             return _error("no file specified for writing")
+    if fname.is_dir() and fname.exists():
+        fname = fname / "db.yaml"
+
+    # Write the file
     try:
         with open(fname, "w") as fp:
+            print("writing library to {}... ".format(fname), end="", flush=True)
             yaml.dump_all(article_list, fp)
+            print("done")
     except FileNotFoundError:
         return _error("directory {} does not exist".format(fname.parent))
+
     return ExitCode.SUCCESS
 
 
@@ -481,6 +500,7 @@ def _openDOIType(refno, format):
 
     # Get the link to the pdf / website
     if format == 'p':
+        global current_db_path
         fname = current_db_path.parent / "pdf" / "{}.pdf".format(doi).replace("/","#")
         fname = fname.resolve()
         if not fname.exists():
