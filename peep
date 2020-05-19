@@ -4,71 +4,24 @@ import os
 import sys
 import subprocess
 import asyncio
-from time import time, sleep
-from threading import Thread
 from copy import deepcopy
 from pathlib import Path
 from enum import Enum
 from locale import getpreferredencoding
-from functools import wraps
+from datetime import datetime
 
 import yaml
 import prompt_toolkit as pt
-from crossref.restful import Works, Etiquette
 
-
-class _g():
-    # Storage of global variables.
-    version_number = "0.1"
-    my_etiquette = Etiquette('PeepLaTeX',
-                             version_number,
-                             'https://github.com/yongrenjie',
-                             'yongrenjie@gmail.com')
-    # List of dictionaries, each containing a single article.
-    articleList = []
-    # pathlib.Path object pointing to the current database.
-    currentPath = None
-    # Number of changes made to articleList that haven't been autosaved.
-    changes = 0
-    # Debugging mode on/off
-    debug = True
-    # Colours for the prompt
-    # Check for Dark Mode (OS X)
-    darkmode = True
-    if sys.platform == "darwin":
-        try:
-            subprocess.run(["defaults", "read", "-g",
-                            "AppleInterfaceStyle", "2>/dev/null"], check=True)
-        except subprocess.CalledProcessError:
-            darkmode = False
-    pink = "#f589d1" if darkmode else "#8629ab"
-    green = "#17cf48" if darkmode else "#2a731f"
-
-
-class _exitCode(Enum):
-    SUCCESS = 0
-    FAILURE = 1
-    pass
-
-
-def timedeco(fn):
-    """
-    Decorator which prints time elapsed for a function call.
-    """
-    @wraps(fn)
-    def timer(*args, **kwargs):
-        now = time()
-        rval = fn(*args, **kwargs)
-        _debug("{}: time elapsed: {:.3f} ms".format(fn.__name__,
-                                                   (time() - now) * 1000))
-        return rval
-    return timer
+import refMgmt
+import listFmt
+from constants import _g, _exitCode, timedeco, _error, _debug
 
 
 class peepPrompt():
     style = pt.styles.Style.from_dict({
-        "prompt": "{} italic".format(_g.pink),
-        ""      : "{}".format(_g.green),
+        "prompt": "{} italic".format(_g.ptPink),
+        ""      : "{}".format(_g.ptGreen),
     })
     message = [("class:prompt", "peep > ")]
     session = pt.PromptSession()
@@ -111,6 +64,10 @@ class peepPrompt():
                         read(args)
                     elif cmd in ["h", "help"]:          # HELP
                         print(self.intro)
+                    elif cmd in ["pee"]:                # PEE
+                        print("zzzpeep")
+                    elif cmd in ["peep"]:               # PEEP
+                        print("PEEP!")
                     else:                               # unknown
                         _error("command '{}' not recognised".format(cmd))
 
@@ -122,13 +79,17 @@ class peepPrompt():
                     #  this sleep. With 3 references, printing takes a
                     #  fraction of a millisecond. With 300 references
                     #  it takes about 60 ms.
-                    await asyncio.sleep(0.1)   # 100 ms.
+                    await asyncio.sleep(0.2)   # 200 ms.
         return
 
 
-#### Key functions
+#############################################################################
+#### Functions which (generally) parse prompt input, perform error checking,
+#### and dispatch to specialised methods. Some are smart enough to be called
+#### from outside the prompt, too.
+
 @timedeco
-def read(args=Path.cwd(), output=None):
+def read(args=Path.cwd(), silent=False):
     """
     Reads a YAML file into the list of dictionaries _g.articleList.
 
@@ -156,6 +117,14 @@ def read(args=Path.cwd(), output=None):
     # Expand tildes and relative paths
     fname = p.expanduser().resolve()
 
+    # If there is an article list loaded, save it first!
+    if _g.articleList and _g.currentPath and _g.changes > 0:
+        # list was loaded from somewhere
+        write()
+    elif _g.articleList and not _g.currentPath:
+        # list was created from scratch
+        return _error("current library has not been saved")
+
     # Check if the yaml file exists
     if not fname.exists():
         return _error("file {} not found".format(fname))
@@ -163,20 +132,25 @@ def read(args=Path.cwd(), output=None):
     # Read in the yaml file
     try:
         with open(fname, "r") as fp:
-            if output != "silent":
+            if not silent:
                 print("reading library {}... ".format(fname))
             _g.articleList = list(yaml.safe_load_all(fp))
-            if output != "silent":
+            if not silent:
                 print("read done")
     except FileNotFoundError:  # seems redundant, but ok
         return _error("file {} not found".format(fname))
     else:
-        _g.currentPath = fname
-        return _exitCode.SUCCESS
+        # Backup the new article list before doing anything, but only if
+        #  it's really a new article...
+        if fname != _g.currentPath:
+            _g.currentPath = fname
+            backup()
+
+    return _exitCode.SUCCESS
 
 
 @timedeco
-def write(args=None, output=None):
+def write(args=None, silent=False):
     """
     Writes the list of dictionaries _g.articleList to a YAML file.
 
@@ -205,10 +179,10 @@ def write(args=None, output=None):
     # Write to the file
     try:
         with open(fname, "w") as fp:
-            if output != "silent":
-                print("writing library to {}... ".format(fname))
+            if not silent:
+                print("writing current library to {}... ".format(fname))
             yaml.dump_all(_g.articleList, fp)
-            if output != "silent":
+            if not silent:
                 print("write done")
     except FileNotFoundError:
         return _error("directory {} does not exist".format(fname.parent))
@@ -226,47 +200,49 @@ def listArticles(articles=None, type="long"):
      type="long": prints every article.
      type="short": prints first 2 and last 2.
     """
-    # Exit if an empty list is provided
-    if articles == []:
-        print("no articles found")
-        return
     # Make a copy first...
     l = deepcopy(articles) if articles is not None else deepcopy(_g.articleList)
+    # Exit if an empty list is provided
+    if l == []:
+        print("no articles found")
+        return
 
     # Get field sizes
     layout_str = "{0:<{1}}{2:{3}}{4:<{5}}{6:{7}}{8:{9}}"
-    fss = _getFS(l)
+    fss = listFmt.getFS(l)
     number_fs, author_fs, year_fs, journal_fs, title_fs = fss
 
     # Print header
-    _printListHead(layout_str, fss)
+    listFmt.printListHead(layout_str, fss)
 
     # Print all article contents
     if len(l) <= 4 or type == "long":
         for i, a in enumerate(l, start=1):
-            _listOneArticle(i, a, layout_str, fss)
+            listFmt.listOneArticle(i, a, layout_str, fss)
         return _exitCode.SUCCESS
     elif type == "short":
         n = len(l)
-        _listOneArticle(1, l[0], layout_str, fss)
-        _listOneArticle(2, l[1], layout_str, fss)
-        _printDots(layout_str, fss)
-        _listOneArticle(n - 1, l[n - 2], layout_str, fss)
-        _listOneArticle(n, l[n - 1], layout_str, fss)
+        listFmt.listOneArticle(1, l[0], layout_str, fss)
+        listFmt.listOneArticle(2, l[1], layout_str, fss)
+        listFmt.printDots(layout_str, fss)
+        listFmt.listOneArticle(n - 1, l[n - 2], layout_str, fss)
+        listFmt.listOneArticle(n, l[n - 1], layout_str, fss)
         return _exitCode.SUCCESS
     else:
-        raise RuntimeError("ARGHH!")
+        return _error("invalid type '{}' provided to listArticles")
 
 
 @timedeco
-def openRef(argls):
+def openRef(args):
     """
     Opens one or more references, in the form of PDF, SI, or Web.
 
     Takes a list of arguments.
     """
-    # Preprocess argls, converting ["1", "2", "3", "p"] -> ["1,2,3,", "p"]
-    argstr = ",".join(argls)
+    if _g.articleList == []:
+        return _error("no articles have been loaded")
+    # Preprocess args, converting ["1", "2", "3", "p"] -> ["1,2,3,", "p"]
+    argstr = ",".join(args)
     # Accept long forms
     argstr = argstr.replace("pdf","p").replace("si","s").replace("web","w")
     # Find the first character in argstr that isn't [0-9,-]
@@ -276,15 +252,11 @@ def openRef(argls):
     argFormat = argstr[x:].replace(",","").strip()
 
     # Parse reference number(s)
-    try:
-        refnos = _parseRefNo(argRefno)
-    except IndexError:
-        return _error("no reference number given")
-    else:
-        # Check the returned value
-        ls = len(_g.articleList)
-        if refnos is None or any(r > ls for r in refnos):
-            return _error("invalid reference number(s) '{}' given".format(argRefno))
+    refnos = refMgmt.parseRefNo(argRefno)
+    # Check the returned value
+    ls = len(_g.articleList)
+    if refnos is None or any(r > ls for r in refnos):
+        return _error("invalid reference number(s) '{}' given".format(argRefno))
     # Parse format(s)
     if argFormat == "":
         formats = ['p']  # if no format specified, assume pdf
@@ -295,263 +267,73 @@ def openRef(argls):
             return _error("invalid format(s) '{}' given".format(argFormat))
 
     # Open the references
-    # generator object
-    rfs = ((r, f) for r in refnos for f in formats)
+    dfs = ((_g.articleList[r - 1]["doi"], f) for r in refnos for f in formats)
     # open(1) is really fast, so it doesn't seem like this could be a problem unless we
     #  are opening tons and tons of references. But if it does then we may want to use
     #  some concurrency methods.
-    for rf in rfs:
-        _openDOIType(*rf)
+    for df in dfs:
+        refMgmt.openDOIType(*df, _g.currentPath)
+    return _exitCode.SUCCESS
 
 
-#### Internal tools for error reporting
-def _error(msg):
-    """
-    Generic error printer.
-    """
-    print("error: {}".format(msg))
-    return _exitCode.FAILURE
+@timedeco
+def cite():
+    pass
 
 
-def _debug(msg):
-    if _g.debug is True:
-        print(msg)
+#############################################################################
+#### Coroutine to autosave current list at regular intervals.
 
-
-#### Internal tools for list printing
-def _printListHead(layout_str, fss):
-    """
-    Print the header.
-    """
-    # unpack field sizes
-    number_fs, author_fs, year_fs, journal_fs, title_fs = fss
-    # blank row
-    print()
-    # header row
-    print(layout_str.format("#", number_fs,
-                            "Authors", author_fs,
-                            "Year", year_fs,
-                            "Journal", journal_fs,
-                            "Title & DOI", title_fs))
-    # a horizontal line
-    print("-" * (number_fs + author_fs + year_fs + journal_fs + title_fs))
-
-
-def _listOneArticle(i, a, layout_str, fss):
-    """
-    Print one article.
-     i          - the number in front.
-     a          - the article
-     layout_str - the format string.
-     fss        - tuple of field sizes: (number, author, year, journal, title)
-    """
-    # unpack field sizes
-    number_fs, author_fs, year_fs, journal_fs, title_fs = fss
-    # generate volume info
-    volinfo = _fmtVolInfo(a)
-    # print the first round of information
-    first_author = a["authors"].pop(0)
-    print(layout_str.format(i, number_fs,
-                            _fmtAuthor(first_author, style="display"), author_fs,
-                            a["year"], year_fs,
-                            a["journal_short"].replace(".",""), journal_fs,
-                            a["title"][:title_fs], title_fs))
-    # cut off the first author
-    a["title"] = a["title"][title_fs:]
-    # if there is still information to be printed, print it
-    while any([a["authors"] != [],
-               a["title"] != "",
-               a["doi"] != "",
-               volinfo != ""]):
-        # get an author if there is one
-        try:
-            next_author = a["authors"].pop(0)
-        except IndexError:
-            next_author = ""
-        # replace the title with the DOI if the title has been printed and DOI hasn't
-        if a["title"] == "" and a["doi"] != "":
-            a["title"] = a["doi"]
-            a["doi"] = ""
-        print(layout_str.format("", number_fs,
-                                _fmtAuthor(next_author, style="display"), author_fs,
-                                "", year_fs,
-                                volinfo, journal_fs,
-                                a["title"][:title_fs], title_fs))
-        a["title"] = a["title"][title_fs:]
-        volinfo = ""
-    # empty line (for readability?)
-    print()
-
-
-def _printDots(layout_str, fss):
-    """
-    Prints dots.
-    """
-    # unpack field sizes
-    number_fs, author_fs, year_fs, journal_fs, title_fs = fss
-    # header row
-    print(layout_str.format("...", number_fs,
-                            "...", author_fs,
-                            "...", year_fs,
-                            "...", journal_fs,
-                            "...", title_fs))
-    print()
-
-
-def _getFS(l):
-    """
-    Calculates appropriate field sizes for the list output.
-
-    I tried caching this information in the article entry, but it makes virtually zero
-     difference to the runtime even for a library of 1400 articles, and it adds extra time
-     for reading/writing from/to disk (for reading in 1400 articles, the time taken increased
-     from ca 2.4 -> 2.7 seconds).
-    It's also a mess, because that means you'd have to remember to cache the information every
-     time you change the metadata.
-    Unfortunately you also can't use functools.lru_cache with this, because in general it will
-     expect a dictionary as the argument, which isn't hashable.
-    """
-    spaces = 2
-    number_fs = len(str(len(l))) + spaces
-    author_fs = max(max(max(len(_fmtAuthor(auth, style="display")) for auth in art["authors"]) for art in l),
-                    len("Authors")
-                    ) + spaces
-    year_fs = 4 + spaces
-    journal_fs = max(max(len(art["journal_short"].replace(".","")) for art in l),
-                     max(len(_fmtVolInfo(art)) for art in l),
-                     len("Journal info")
-                     ) + spaces
-    # either use up the remaining space, or extend to the end of the longest title
-    total_columns = os.get_terminal_size().columns
-    title_fs = min(total_columns - number_fs - author_fs - year_fs - journal_fs,
-                   max(len(a["title"]) for a in l))
-
-    return (number_fs, author_fs, year_fs, journal_fs, title_fs)
-
-
-def _fmtAuthor(author, style):
-    """
-    Prettify author names.
-    """
-    # Return empty string for any Falsy value
-    if not author:
-        return ""
-    family_name = author["family"]
-    given_names = author["given"]
-    # Jonathan R. J. Yong -> JRJ Yong
-    if style == "display":
-        return "".join(n[0] for n in given_names.split()) + " " + author["family"]
-    # Otherwise just return the name as a string
-    else:
-        return given_names + " " + family_name
-
-
-def _fmtVolInfo(article):
-    """
-    Returns the string "vol (issue), page-page", or "vol, page-page" if
-    no issue number is present.
-    """
-    if "issue" in article:
-        return "{} ({}), {}".format(article["volume"],
-                                    article["issue"],
-                                    article["page"])
-    else:
-        return "{}, {}".format(article["volume"],
-                               article["page"])
-
-
-#### Internal tools for reference number parsing
-def _parseRefNo(s):
-    """
-    Takes a string s and returns a list of int reference numbers.
-    Returns None if any error is found.
-     e.g. "1"      -> [1]
-          "1-5"    -> [1, 2, 3, 4, 5]
-          "1-4,43" -> [1, 2, 3, 4, 43]
-    """
-    s = s.split(",")
-    t = []
-    try:
-        for i in s:
-            if "-" in i:
-                min, max = i.split("-")   # ValueError if too many entries
-                if min >= max:
-                    raise ValueError("you silly billy")
-                for m in range(int(min), int(max) + 1):
-                    t.append(m)
-            else:
-                t.append(int(i))          # ValueError if not castable to int
-    except ValueError:
-        return None
-    else:
-        return t
-
-
-#### Internal tool for opening PDFs / DOI URLs
-def _openDOIType(refno, format):
-    # Get the doi
-    try:
-        doi = _g.articleList[refno - 1]["doi"]
-    except IndexError:
-        raise RuntimeError("AGH!!! _openDOIType() got an argument it shouldn't have!")
-
-    # Get the link to the pdf / website
-    if format == 'p':
-        fname = _g.currentPath.parent / "pdf" / "{}.pdf".format(doi).replace("/","#")
-        fname = fname.resolve()
-        if not fname.exists():
-            return _error("ref {} (p): file {} not found".format(refno, fname))
-    elif format == 's':
-        fname = _g.currentPath.parent / "si" / "{}.pdf".format(doi).replace("/","#")
-        fname = fname.resolve()
-        if not fname.exists():
-            return _error("ref {} (s): file {} not found".format(refno, fname))
-    elif format == 'w':
-        fname = "https://doi.org/{}".format(doi)
-    else:
-        raise RuntimeError("AGH!!! _openDOIType() got an argument it shouldn't have!")
-
-    # Open the thing, error out if it can't be found
-    try:
-        subprocess.run(["open", fname], check=True, capture_output=True)
-    except subprocess.CalledProcessError:
-        return _error("ref {}: file {} could not be opened".format(refno, fname))
-    else:
-        ec = _exitCode.SUCCESS
-    return ec
-
-
-#### Autosave and backup coroutines
 async def _autosave():
-    # Saves _g.articleList to _g.currentPath.swp if both are not empty
-    interval = 2   # number of seconds between autosaves
+    # Saves _g.articleList to _g.currentPath if both are not empty
     while True:
         try:
-            await asyncio.sleep(interval)
+            await asyncio.sleep(_g.autosaveInterval)
             # Right now we only have one article list at a time, and
             #  changes_made just contains sentinel values.
-            #  
-            if _g.articleList != [] and _g.currentPath is not None and _g.changes > 0:
-                write(_g.currentPath)
-                print("autosaved")
+            if _g.articleList and _g.currentPath and _g.changes > 0:
+                _debug("autosave: found {} change(s)".format(_g.changes))
+                write(silent=True)
+                _debug("autosave complete")
                 changes = 0
         except asyncio.CancelledError:
             break
 
+#############################################################################
+#### Backup function.
 
-async def _backup():
-    # Saves _g.articleList to _g.currentPath.bak if it is not empty.
-    # To be run once when entering the programme.
+def backup():
+    """Saves _g.articleList (if it isn't empty) to the backups folder."""
+    if _g.maxBackups == 0:
+        return
     if _g.articleList != [] and _g.currentPath is not None:
-        try:
-            await asyncio.sleep(0.1)
-            backupFolder = _g.currentPath.parent / "backups"
-            if not backupFolder.exists():
-                backupFolder.mkdir()
-            fname = backupFolder / (_g.currentPath.name + "date")
-            write(fname, output="silent")
-        except asyncio.CancelledError:
-            return
+        dbName = _g.currentPath.name
+        # Figure out the folder name
+        backupFolder = _g.currentPath.parent / "backups"
+        if not backupFolder.exists():
+            backupFolder.mkdir()
+        # Clean up the folder if it's too cluttered
+        # This sorts in descending order of time created
+        oldBackups = sorted([i for i in backupFolder.iterdir()
+                             if i.name.startswith(dbName)],
+                            key=(lambda i: i.name),
+                            reverse=True)
+        # Deletes anything after the _g.maxBackups - 1 newest ones
+        #  (because after we back up, there will be _g.maxBackups
+        #  backups).
+        if len(oldBackups) >= _g.maxBackups:
+            for oldBackup in oldBackups[_g.maxBackups - 1:]:
+                _debug("backup: deleting old backup {}".format(oldBackup))
+                oldBackup.unlink()
+        # Do the backup
+        now = datetime.now().strftime(".%y%m%d_%H%M%S")
+        fname = backupFolder / (dbName + now)
+        write(fname, silent=True)
+        _debug("backup: completed")
+    else:
+        _debug("backup: failed to back up articleList "
+               "(length {}) with currentPath '{}'".format(len(_g.articleList),
+                                                          _g.current))
 
 
 #### Main coroutine
@@ -560,8 +342,6 @@ async def main():
     # Try to load db.yaml from sys.argv[1], or current directory
     # In principle this should be done with argparse
     read(sys.argv[1:] if len(sys.argv) > 1 else [Path.cwd()])
-    # Backup the current article list if it was found
-    t_backup = asyncio.create_task(_backup())
 
     # MAIN TASKS
     autosave = True
@@ -573,11 +353,10 @@ async def main():
     pmt = peepPrompt()
     pmtloop = await pmt.loop()
 
-    print("Saving and exiting...")
+    print("Exiting... zzzpeep")
 
     # SHUTDOWN CODE
     # Stop other tasks
-    t_backup.cancel()
     t_autosave.cancel()
     # prompt_toolkit bug
     count = 0
