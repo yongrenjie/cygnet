@@ -17,7 +17,6 @@ import prompt_toolkit as pt
 from crossref.restful import Works, Etiquette
 
 
-
 class _g():
     # Storage of global variables.
     version_number = "0.1"
@@ -33,6 +32,17 @@ class _g():
     changes = 0
     # Debugging mode on/off
     debug = True
+    # Colours for the prompt
+    # Check for Dark Mode (OS X)
+    darkmode = True
+    if sys.platform == "darwin":
+        try:
+            subprocess.run(["defaults", "read", "-g",
+                            "AppleInterfaceStyle", "2>/dev/null"], check=True)
+        except subprocess.CalledProcessError:
+            darkmode = False
+    pink = "#f589d1" if darkmode else "#8629ab"
+    green = "#17cf48" if darkmode else "#2a731f"
 
 
 class _exitCode(Enum):
@@ -57,8 +67,8 @@ def timedeco(fn):
 
 class peepPrompt():
     style = pt.styles.Style.from_dict({
-        "prompt": "#ff0066 italic",
-        ""      : "#17cf48",
+        "prompt": "{} italic".format(_g.pink),
+        ""      : "{}".format(_g.green),
     })
     message = [("class:prompt", "peep > ")]
     session = pt.PromptSession()
