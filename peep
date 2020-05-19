@@ -3,8 +3,7 @@
 import os
 import sys
 import subprocess
-import cmd
-import atexit
+import asyncio
 from time import time, sleep
 from threading import Thread
 from copy import deepcopy
@@ -14,23 +13,31 @@ from locale import getpreferredencoding
 from functools import wraps
 
 import yaml
+import prompt_toolkit as pt
 from crossref.restful import Works, Etiquette
 
-version_number = "0.1"
-
-my_etiquette = Etiquette('PeepLaTeX',
-                         version_number,
-                         'https://github.com/yongrenjie',
-                         'yongrenjie@gmail.com')
-
-article_list = []
-current_db_path = None     # Path object pointing to the current database
 
 
-class ExitCode(Enum):
+class _g():
+    # Storage of global variables.
+    version_number = "0.1"
+    my_etiquette = Etiquette('PeepLaTeX',
+                             version_number,
+                             'https://github.com/yongrenjie',
+                             'yongrenjie@gmail.com')
+    # List of dictionaries, each containing a single article.
+    articleList = []
+    # pathlib.Path object pointing to the current database.
+    currentPath = None
+    # Number of changes made to articleList that haven't been autosaved.
+    changes = 0
+    # Debugging mode on/off
+    debug = True
+
+
+class _exitCode(Enum):
     SUCCESS = 0
     FAILURE = 1
-    WAITING = 2
     pass
 
 
@@ -42,126 +49,103 @@ def timedeco(fn):
     def timer(*args, **kwargs):
         now = time()
         rval = fn(*args, **kwargs)
-        print("time elapsed: {:.3f} ms".format((time() - now) * 1000))
+        _debug("{}: time elapsed: {:.3f} ms".format(fn.__name__,
+                                                   (time() - now) * 1000))
         return rval
     return timer
 
 
-class peepShell(cmd.Cmd):
-    """
-    Command-line interface.
-    """
-    intro = "/---------------------------------------------------------------\\" "\n"\
-           f"| PeepLaTeX v{version_number:<20}                               |"  "\n"\
-            "| Common commands:                                              |"  "\n"\
-            "| ----------------                                              |"  "\n"\
-            "| r - read database     l - list papers        o - open a paper |"  "\n"\
-            "| c - get a citation    h - print this again   q - quit         |"  "\n"\
-            "\\---------------------------------------------------------------/"
-    prompt = "peep > "
+class peepPrompt():
+    style = pt.styles.Style.from_dict({
+        "prompt": "#ff0066 italic",
+        ""      : "#17cf48",
+    })
+    message = [("class:prompt", "peep > ")]
+    session = pt.PromptSession()
 
-    def default(self, line):
-        wrongCmd = line.split()[0]
-        _error("command '{}' unrecognised".format(wrongCmd))
+    intro = "/------------------------------------------------------------\\" "\n"\
+           f"| PeepLaTeX v{_g.version_number:<23}                         |"  "\n"\
+            "| Common commands:                                           |"  "\n"\
+            "| ----------------                                           |"  "\n"\
+            "| r - read database     l - list papers     o - open a paper |"  "\n"\
+            "| c - get a citation    h - help            q - quit         |"  "\n"\
+            "\\------------------------------------------------------------/"
 
-    def emptyline(self):
-        # do nothing
-        pass
-
-    # Functions with associated synonyms 
-
-    def do_q(self, arg):       # QUIT
-        """
-        Quit.
-        """
-        sys.exit(0)
-    do_quit = do_q
-
-    def do_EOF(self, arg):     # QUIT alternative
-        print()
-        sys.exit(0)
-
-    def do_h(self, arg):       # HELP
-        """
-        Print help.
-        """
+    async def loop(self):
         print(self.intro)
-    do_help = do_h
+        with pt.patch_stdout.patch_stdout():
+            while True:
+                try:
+                    line = await self.session.prompt_async(self.message,
+                                                           style=self.style)
+                except KeyboardInterrupt:
+                    continue
+                except EOFError:
+                    break
+                else:
+                    x = line.split()
+                    if not x:
+                        continue
+                    else:
+                        cmd, args = x[0], x[1:]
 
-    def do_r(self, arg):       # READ 
-        """
-        Reads in a YAML file.
-        Usage: r [fname]
-          [fname]: absolute or relative path to the desired input file.
-        """
-        read(arg.split())
-    do_read = do_r
+                    if cmd in ["q", "quit"]:            # QUIT
+                        break
+                    elif cmd in ["o", "open"]:          # OPEN
+                        openRef(args)
+                    elif cmd in ["w", "write"]:         # WRITE
+                        write(args)
+                    elif cmd in ["l", "ls", "list"]:    # LIST
+                        listArticles()
+                    elif cmd in ["r", "read"]:          # READ
+                        read(args)
+                    elif cmd in ["h", "help"]:          # HELP
+                        print(self.intro)
+                    else:                               # unknown
+                        _error("command '{}' not recognised".format(cmd))
 
-    def do_w(self, arg):       # WRITE
-        """
-        Write to a YAML file.
-        Usage: w [fname]
-          [fname]: absolute or relative path to the desired output file.
-        """
-        write(arg.split())
-    do_write = do_w
-
-    def do_l(self, arg):       # LIST
-        """
-        Lists all available articles.
-        Any arguments are discarded. (For now.)
-        """
-        global article_list
-        listArticles(article_list)
-    do_ls = do_l
-    do_list = do_l
-
-    def do_o(self, arg):       # OPEN
-        """
-        Opens one or more references in the form of PDF, SI, or Web.
-        Usage: o [refno] [format]
-          [refno]: integer, or range of integers X-Y (inclusive). Multiple refnos can
-                   be concatenated with commas or spaces.
-          [format]: "p", "s", or "w". Multiple formats can be concatenated directly,
-                   with commas, or with spaces. Defaults to "p" if not specified.
-        """
-        openRef(arg.split())
-    do_op = do_o
-    do_open = do_o
-
-    # debugging tests
-    def do_sleep(self, arg):
-        Thread(target=zzzsleep, args=(arg.split()[0],)).start()
-    def do_check(self, arg):
-        global article_list
-        print(article_list)
+                    # Need a tiny sleep to paper over a weird bug.
+                    # Try removing this and spamming 'l' before quitting
+                    #  to see the bug.
+                    # There WILL be bugs if the time taken to print any
+                    #  output (e.g. 'l' with large databases) exceeds
+                    #  this sleep. With 3 references, printing takes a
+                    #  fraction of a millisecond. With 300 references
+                    #  it takes about 60 ms.
+                    await asyncio.sleep(0.1)   # 100 ms.
+        return
 
 
+#### Key functions
 @timedeco
-def read(argls):
+def read(args=Path.cwd(), output=None):
     """
-    Reads a YAML file into the list of dictionaries article_list.
+    Reads a YAML file into the list of dictionaries _g.articleList.
 
-    Takes a list as an argument. The first element of this list must be an
-     (absolute or relative) path to the folder containing a db.yaml file,
-     or an (absolute or relative) path to a .yaml / .yml file. If the list is
-     empty, then it is taken to be the current working directory.
+    Accepts a string, pathlib.Path object, or a list/tuple containing
+     a string or Path object as the first item.
 
-    Any other elements in the list are ignored.
+    If the argument is a directory, then read() attempts to read from the
+     file db.yaml inside that directory.
+
+    Defaults to Path.cwd().
     """
-    global article_list
-    global current_db_path
-
-    # Get the directory from argls, converting to pathlib.Path
+    # Argument parsing
+    if isinstance(args, (list, tuple)):
+        try:
+            args = args[0]
+        except IndexError:   # empty list or tuple
+            args = Path.cwd()
     try:
-        p = Path(argls[0])
-    except IndexError:
-        p = Path.cwd()
+        p = Path(args)
+    except TypeError:   # not castable
+        return _error("invalid argument '{}' provided to read()".format(args))
     # If it points to an existing directory, load db.yaml from there
     if p.is_dir() and p.exists():
         p = p / "db.yaml"
     # Expand tildes and relative paths
     fname = p.expanduser().resolve()
+
     # Check if the yaml file exists
     if not fname.exists():
         return _error("file {} not found".format(fname))
@@ -169,59 +153,75 @@ def read(argls):
     # Read in the yaml file
     try:
         with open(fname, "r") as fp:
-            print("Loading library {}... ".format(fname), end="", flush=True)
-            article_list = list(yaml.safe_load_all(fp))
-            print("done")
+            if output != "silent":
+                print("reading library {}... ".format(fname))
+            _g.articleList = list(yaml.safe_load_all(fp))
+            if output != "silent":
+                print("read done")
     except FileNotFoundError:  # seems redundant, but ok
         return _error("file {} not found".format(fname))
     else:
-        current_db_path = fname
-        return ExitCode.SUCCESS
+        _g.currentPath = fname
+        return _exitCode.SUCCESS
 
 
 @timedeco
-def write(argls):
+def write(args=None, output=None):
     """
-    Writes the list of dictionaries article_list to a YAML file.
+    Writes the list of dictionaries _g.articleList to a YAML file.
+
+    Accepts a string, pathlib.Path object, or a list/tuple containing
+     a string or Path object as the first item.
+    Defaults to _g.currentPath.
     """
-    global article_list
-    # Determine output location
+    ### Argument parsing
+    # Convert to a pathlib.Path object regardless of the input
+    if isinstance(args, (list, tuple)):
+        try:
+            args = args[0]
+        except IndexError:   # empty list or tuple
+            args = _g.currentPath
+    if args is None:
+        args = _g.currentPath
     try:
-        fname = Path(argls[0]).expanduser().resolve()
-    except IndexError:
-        global current_db_path
-        if current_db_path is not None:
-            fname = current_db_path
-        else:
-            return _error("no file specified for writing")
+        fname = Path(args)
+    except TypeError:  # not castable
+        return _error("invalid argument '{}' provided to write()".format(args))
+
+    # Determine output location
     if fname.is_dir() and fname.exists():
         fname = fname / "db.yaml"
 
-    # Write the file
+    # Write to the file
     try:
         with open(fname, "w") as fp:
-            print("writing library to {}... ".format(fname), end="", flush=True)
-            yaml.dump_all(article_list, fp)
-            print("done")
+            if output != "silent":
+                print("writing library to {}... ".format(fname))
+            yaml.dump_all(_g.articleList, fp)
+            if output != "silent":
+                print("write done")
     except FileNotFoundError:
         return _error("directory {} does not exist".format(fname.parent))
 
-    return ExitCode.SUCCESS
+    return _exitCode.SUCCESS
 
 
 @timedeco
-def listArticles(articles, type="long"):
+def listArticles(articles=None, type="long"):
     """
-    Print prettified output of a given list of articles.
+    Print prettified output of a given list of articles. Defaults to the entire
+     list of articles _g.articleList.
+
+    Accepts an additional parameter to control how many articles are printed.
      type="long": prints every article.
      type="short": prints first 2 and last 2.
     """
-    # Exit if article list is empty
+    # Exit if an empty list is provided
     if articles == []:
         print("no articles found")
         return
     # Make a copy first...
-    l = deepcopy(articles)
+    l = deepcopy(articles) if articles is not None else deepcopy(_g.articleList)
 
     # Get field sizes
     layout_str = "{0:<{1}}{2:{3}}{4:<{5}}{6:{7}}{8:{9}}"
@@ -235,7 +235,7 @@ def listArticles(articles, type="long"):
     if len(l) <= 4 or type == "long":
         for i, a in enumerate(l, start=1):
             _listOneArticle(i, a, layout_str, fss)
-        return ExitCode.SUCCESS
+        return _exitCode.SUCCESS
     elif type == "short":
         n = len(l)
         _listOneArticle(1, l[0], layout_str, fss)
@@ -243,7 +243,7 @@ def listArticles(articles, type="long"):
         _printDots(layout_str, fss)
         _listOneArticle(n - 1, l[n - 2], layout_str, fss)
         _listOneArticle(n, l[n - 1], layout_str, fss)
-        return ExitCode.SUCCESS
+        return _exitCode.SUCCESS
     else:
         raise RuntimeError("ARGHH!")
 
@@ -252,16 +252,18 @@ def listArticles(articles, type="long"):
 def openRef(argls):
     """
     Opens one or more references, in the form of PDF, SI, or Web.
+
+    Takes a list of arguments.
     """
-    global article_list
-    global current_db_path
     # Preprocess argls, converting ["1", "2", "3", "p"] -> ["1,2,3,", "p"]
     argstr = ",".join(argls)
+    # Accept long forms
+    argstr = argstr.replace("pdf","p").replace("si","s").replace("web","w")
     # Find the first character in argstr that isn't [0-9,-]
     x = next((i for i, c in enumerate(argstr) if c not in "1234567890,-"), len(argstr))
     # Then repackage them
     argRefno = argstr[:x].rstrip(",")
-    argFormat = argstr[x:].replace(",","")
+    argFormat = argstr[x:].replace(",","").strip()
 
     # Parse reference number(s)
     try:
@@ -270,15 +272,14 @@ def openRef(argls):
         return _error("no reference number given")
     else:
         # Check the returned value
-        ls = len(article_list)
+        ls = len(_g.articleList)
         if refnos is None or any(r > ls for r in refnos):
             return _error("invalid reference number(s) '{}' given".format(argRefno))
     # Parse format(s)
-    try:
-        formats = list(argFormat)
-    except IndexError:
+    if argFormat == "":
         formats = ['p']  # if no format specified, assume pdf
     else:
+        formats = list(argFormat)
         # Check for invalid formats
         if any([i not in list("psw") for i in formats]):
             return _error("invalid format(s) '{}' given".format(argFormat))
@@ -293,31 +294,21 @@ def openRef(argls):
         _openDOIType(*rf)
 
 
-#### Tools for debugging
-
-@timedeco
-def zzzsleep(time):
-    """
-    For debugging purposes
-    """
-    t = float(time)
-    print("going to zzz for {} seconds...".format(t))
-    sleep(t)
-    print("\nzzz... woke up... exiting\n")
-
-
-#### Internal tool for error reporting
-
+#### Internal tools for error reporting
 def _error(msg):
     """
     Generic error printer.
     """
     print("error: {}".format(msg))
-    return ExitCode.FAILURE
+    return _exitCode.FAILURE
+
+
+def _debug(msg):
+    if _g.debug is True:
+        print(msg)
 
 
 #### Internal tools for list printing
-
 def _printListHead(layout_str, fss):
     """
     Print the header.
@@ -460,7 +451,6 @@ def _fmtVolInfo(article):
 
 
 #### Internal tools for reference number parsing
-
 def _parseRefNo(s):
     """
     Takes a string s and returns a list of int reference numbers.
@@ -488,25 +478,21 @@ def _parseRefNo(s):
 
 
 #### Internal tool for opening PDFs / DOI URLs
-
 def _openDOIType(refno, format):
-    global article_list
-
     # Get the doi
     try:
-        doi = article_list[refno - 1]["doi"]
+        doi = _g.articleList[refno - 1]["doi"]
     except IndexError:
         raise RuntimeError("AGH!!! _openDOIType() got an argument it shouldn't have!")
 
     # Get the link to the pdf / website
     if format == 'p':
-        global current_db_path
-        fname = current_db_path.parent / "pdf" / "{}.pdf".format(doi).replace("/","#")
+        fname = _g.currentPath.parent / "pdf" / "{}.pdf".format(doi).replace("/","#")
         fname = fname.resolve()
         if not fname.exists():
             return _error("ref {} (p): file {} not found".format(refno, fname))
     elif format == 's':
-        fname = current_db_path.parent / "si" / "{}.pdf".format(doi).replace("/","#")
+        fname = _g.currentPath.parent / "si" / "{}.pdf".format(doi).replace("/","#")
         fname = fname.resolve()
         if not fname.exists():
             return _error("ref {} (s): file {} not found".format(refno, fname))
@@ -521,20 +507,78 @@ def _openDOIType(refno, format):
     except subprocess.CalledProcessError:
         return _error("ref {}: file {} could not be opened".format(refno, fname))
     else:
-        ec = ExitCode.SUCCESS
+        ec = _exitCode.SUCCESS
     return ec
 
 
-#### Main routines
+#### Autosave and backup coroutines
+async def _autosave():
+    # Saves _g.articleList to _g.currentPath.swp if both are not empty
+    interval = 2   # number of seconds between autosaves
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            # Right now we only have one article list at a time, and
+            #  changes_made just contains sentinel values.
+            #  
+            if _g.articleList != [] and _g.currentPath is not None and _g.changes > 0:
+                write(_g.currentPath)
+                print("autosaved")
+                changes = 0
+        except asyncio.CancelledError:
+            break
 
-def main():
+
+async def _backup():
+    # Saves _g.articleList to _g.currentPath.bak if it is not empty.
+    # To be run once when entering the programme.
+    if _g.articleList != [] and _g.currentPath is not None:
+        try:
+            await asyncio.sleep(0.1)
+            backupFolder = _g.currentPath.parent / "backups"
+            if not backupFolder.exists():
+                backupFolder.mkdir()
+            fname = backupFolder / (_g.currentPath.name + "date")
+            write(fname, output="silent")
+        except asyncio.CancelledError:
+            return
+
+
+#### Main coroutine
+async def main():
+    # STARTUP CODE
     # Try to load db.yaml from sys.argv[1], or current directory
     # In principle this should be done with argparse
-    global article_list
     read(sys.argv[1:] if len(sys.argv) > 1 else [Path.cwd()])
-    # Start the REPL
-    peepShell().cmdloop()
+    # Backup the current article list if it was found
+    t_backup = asyncio.create_task(_backup())
+
+    # MAIN TASKS
+    autosave = True
+    # Start autosave task.
+    # It doesn't actually save unless there's something to save.
+    if autosave:
+        t_autosave = asyncio.create_task(_autosave())
+    # Start REPL
+    pmt = peepPrompt()
+    pmtloop = await pmt.loop()
+
+    print("Saving and exiting...")
+
+    # SHUTDOWN CODE
+    # Stop other tasks
+    t_backup.cancel()
+    t_autosave.cancel()
+    # prompt_toolkit bug
+    count = 0
+    for t in asyncio.all_tasks():
+        if "wait_for_timeout()" in repr(t):
+            count += 1
+            t.cancel()
+    _debug("{} timeout tasks cancelled.".format(count))
 
 
 if __name__ == "__main__":
-    main()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
+    loop.close()
