@@ -148,6 +148,6 @@ def makeCitation(article, fmt):
                 a["page"], a["doi"], a["doi"]
             )
     elif fmt == 'b':
-        return None
+
     else:
         raise ValueError("makeCitation: incorrect fmt {} received".format(fmt))

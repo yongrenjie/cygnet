@@ -15,7 +15,7 @@ import pyperclip as pc
 
 import refMgmt
 import listFmt
-from constants import _g, _exitCode, timedeco, _error, _debug
+from constants import _g, _exitCode, _timedeco, _error, _debug, _copy
 
 
 class peepPrompt():
@@ -64,7 +64,7 @@ class peepPrompt():
                     if cmd in ["q", "quit", "zzzpeep"]:         # QUIT
                         break
                     elif cmd in ["c", "cite"]:                  # CITE
-                        cite(args)
+                        asyncio.create_task(cite(args))
                     elif cmd in ["o", "open"]:                  # OPEN
                         openRef(args)
                     elif cmd in ["w", "write"]:                 # WRITE
@@ -99,7 +99,7 @@ class peepPrompt():
 #### and dispatch to specialised methods. Some are smart enough to be called
 #### from outside the prompt, too.
 
-@timedeco
+@_timedeco
 def read(args=Path.cwd(), silent=False):
     """
     Reads a YAML file into the list of dictionaries _g.articleList.
@@ -160,7 +160,7 @@ def read(args=Path.cwd(), silent=False):
     return _exitCode.SUCCESS
 
 
-@timedeco
+@_timedeco
 def write(args=None, silent=False):
     """
     Writes the list of dictionaries _g.articleList to a YAML file.
@@ -201,7 +201,7 @@ def write(args=None, silent=False):
     return _exitCode.SUCCESS
 
 
-@timedeco
+@_timedeco
 def listArticles(articles=None, type="long"):
     """
     Print prettified output of a given list of articles. Defaults to the entire
@@ -243,7 +243,7 @@ def listArticles(articles=None, type="long"):
         return _error("listArticles: invalid type '{}'".format(type))
 
 
-@timedeco
+@_timedeco
 def openRef(args):
     """
     Opens one or more references, in the form of PDF, SI, or Web.
@@ -279,8 +279,8 @@ def openRef(args):
     return _exitCode.SUCCESS
 
 
-@timedeco
-def cite(args):
+@_timedeco
+async def cite(args):
     """Prints citation for one or more references in the form of DOI, BibLaTeX, or
     Markdown (e.g. for use on Stack Exchange).
 
@@ -315,8 +315,7 @@ def cite(args):
         if len(refnos) > 1 or len(formats) > 1:
             sep = "\n\n" if af[1] in "Mm" else "\n"
     print(citation)
-    pc.copy(citation)
-    pass
+    await _copy(citation)
 
 
 #############################################################################

@@ -7,11 +7,13 @@ It also contains trivial functions that are used repeatedly throughout the code.
 
 import sys
 import subprocess
+import asyncio
+from locale import getpreferredencoding as gpe
 from enum import Enum
 from pathlib import Path
 from functools import wraps
-
 from time import time
+
 from crossref.restful import Etiquette
 
 
@@ -57,7 +59,7 @@ class _exitCode(Enum):
     pass
 
 
-def timedeco(fn):
+def _timedeco(fn):
     """
     Decorator which prints time elapsed for a function call.
     """
@@ -65,6 +67,24 @@ def timedeco(fn):
     def timer(*args, **kwargs):
         now = time()
         rval = fn(*args, **kwargs)
+        _debug("{}: time elapsed: {:.3f} ms".format(fn.__name__,
+                                                   (time() - now) * 1000))
+        return rval
+    return timer
+
+
+def _asynctimedeco(fn):
+    """
+    Decorator which prints time elapsed for an async function to run to completion.
+
+    Note that using this decorator effectively makes the function block until it has
+     finished, i.e. it makes it no longer actually async!!
+    It's only useful for profiling timings
+    """
+    @wraps(fn)
+    async def timer(*args, **kwargs):
+        now = time()
+        rval = await fn(*args, **kwargs)
         _debug("{}: time elapsed: {:.3f} ms".format(fn.__name__,
                                                    (time() - now) * 1000))
         return rval
@@ -84,3 +104,18 @@ def _debug(msg):
     if _g.debug is True:
         print("{}{}{}".format(_g.ansiGrey, msg, _g.ansiReset))
 
+
+async def _copy(s):
+    """Copy s to the clipboard.
+
+    Doesn't pretend to be cross-platform. Only for macOS.
+    Linux (specifically WSL) support to be added in future.
+    """
+    # pbcopy(1) and pbpaste(1) for macOS
+    if sys.platform == "darwin":
+        proc = await asyncio.create_subprocess_exec("pbcopy",
+                                                    stdin=asyncio.subprocess.PIPE)
+        await proc.communicate(input=s.encode(gpe()))
+        return
+    else:
+        return _error("_copy: unsupported OS, not copied to clipboard")
