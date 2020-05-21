@@ -6,4 +6,4 @@ Package dependencies:
  - `prompt_toolkit`
  - `crossrefapi`
  - `pyyaml`
- - `pyperclip`
+ - `unidecode`

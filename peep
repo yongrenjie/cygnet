@@ -24,6 +24,7 @@ class peepPrompt():
         ""      : "{}".format(_g.ptGreen),
     })
     message = [("class:prompt", "peep > ")]
+    commentSymbol = '#'
     session = pt.PromptSession()
 
     intro = "/------------------------------------------------------------\\" "\n"\
@@ -46,11 +47,14 @@ class peepPrompt():
                 except EOFError:
                     break
                 else:
-                    x = line.split()
-                    if not x:
+                    # Remove anything after a comment
+                    if self.commentSymbol in line:
+                        line = line.split(self.commentSymbol)[0].rstrip()
+                    line = line.split()
+                    if not line:
                         continue
                     else:
-                        cmd, args = x[0], x[1:]
+                        cmd, args = line[0], line[1:]
                     cmd = cmd.lstrip(":")  # I have typed in :q more than once
 
                     # If any numbers are in the cmd, separate the bit with 

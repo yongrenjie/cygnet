@@ -168,7 +168,7 @@ def makeCitation(article, fmt):
                        "    year = {{{}}},\n".format(a["year"]) + \
                       ("    volume = {{{}}},\n".format(a["volume"]) if "volume" in a else "") + \
                       ("    issue = {{{}}},\n".format(a["issue"]) if "issue" in a else "") + \
-                      ("    pages = {{{}}},\n".format(a["pages"]) if "pages" in a else "") + \
+                      ("    pages = {{{}}},\n".format(a["page"]) if "page" in a else "") + \
                        "}"
         return s
     else:
