@@ -23,7 +23,7 @@ authors:
   given: Mohammadali
 doi: 10.1002/chem.201800524
 issue: 53
-journalLong: 'Chemistry: A European Journal'
+journalLong: "Chemistry \u2013 A European Journal"
 journalShort: Chem. Eur. J.
 pages: 13988-14000
 title: PSYCHE Pure Shift NMR Spectroscopy
@@ -43,6 +43,18 @@ pages: 11779-11783
 title: 'NOAH: NMR Supersequences for Small Molecule Analysis and Structure Elucidation'
 volume: 56
 year: 2017
+---
+authors:
+- family: Jones
+  given: Jonathan A.
+doi: 10.1016/j.pnmrs.2010.11.001
+issue: 2
+journalLong: Progress in Nuclear Magnetic Resonance Spectroscopy
+journalShort: Prog. Nucl. Magn. Reson. Spectrosc.
+pages: 91-120
+title: Quantum computing with NMR
+volume: 59
+year: 2011
 ---
 authors:
 - family: Jones

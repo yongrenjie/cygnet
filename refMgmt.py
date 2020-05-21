@@ -190,6 +190,9 @@ def getMetadataFromDOI(doi):
     Incorrect journal short forms are corrected here. The dictionary containing
     the corrections is stored in _g.
     """
+    # TODO: can't print text before the doi is fetched.
+    # Maybe we can turn this into a coroutine anyway, with a spinner. :-)
+    print("getMetadataFromDOI: fetching data for {} from Crossref...".format(doi))
     d = _g.works.doi(doi)
     if d is None:   # lookup failed
         return None
@@ -210,6 +213,58 @@ def getMetadataFromDOI(doi):
         a["issue"] = int(d["issue"]) if "issue" in d else ""
         a["pages"] = d["page"] if "page" in d else ""
         return a
+
+
+def diffArticles(aold, anew):
+    """Compare metadata of two articles. To be used when (e.g.) calling updateRef(), so that the user can either
+    accept or reject the changes.
+
+    The proposed change is aold -> anew, i.e. aold is being replaced with anew.
+
+    This function returns the number of keys for which the two dictionaries' values differ. But it also prints
+    coloured output showing what data is going to be removed / added. It's designed to be similar to git diff,
+    except that a more nuanced shade of red is used (to avoid confusion with errors), and a more turquoise
+    shade of green is used (to avoid confusion with the prompt).
+    """
+    if aold == anew:
+        return 0
+    else:
+        ao = deepcopy(aold)
+        an = deepcopy(anew)
+        ndiff = 0
+        # Fix the author key. Everything else can just be autoconverted into
+        #  strings.
+        if "authors" in ao:
+            ao["authors"] = ", ".join(listFmt.fmtAuthor(auth) for auth in ao["authors"])
+        if "authors" in an:
+            an["authors"] = ", ".join(listFmt.fmtAuthor(auth) for auth in an["authors"])
+        # Get the set of all items in ao and an
+        allKeys = sorted(list(set(ao) | set(an)))
+        # Get field width
+        maxlen = max(len(key) for key in allKeys)
+        # Check individual keys
+        for key in allKeys:
+            # Key is in both. We expect this to be the case most of the time.
+            if key in ao and key in an:
+                if ao[key] == an[key]:
+                    print("{:>{}}: {}".format(key, maxlen, ao[key]))
+                else:
+                    ndiff += 1
+                    print("{:>{}}: {}- {}{}".format(key, maxlen, _g.ansiDiffRed,
+                                                    ao[key], _g.ansiReset))
+                    print("{:>{}}  {}+ {}{}".format("", maxlen, _g.ansiDiffGreen,
+                                                    an[key], _g.ansiReset))
+            # Key is in ao only, i.e. it is being removed.
+            elif key in ao and key not in an:
+                ndiff += 1
+                print("{:>{}}: {}- {}{}".format(key, maxlen, _g.ansiDiffRed,
+                                                ao[key], _g.ansiReset))
+            # Key is in an only, i.e. it is being added.
+            elif key not in ao and key in an:
+                ndiff += 1
+                print("{:>{}}: {}+ {}{}".format(key, maxlen, _g.ansiDiffGreen,
+                                                an[key], _g.ansiReset))
+        return ndiff
 
 
 def getDOIFromPDF(p):

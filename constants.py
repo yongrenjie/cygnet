@@ -47,10 +47,16 @@ class _g():
                            stderr=subprocess.DEVNULL, check=True)
         except subprocess.CalledProcessError:
             darkmode = False
+
+    # Colours for various stuff. Names should be self-explanatory.
     ptPink = "#f589d1" if darkmode else "#8629ab"
     ptGreen = "#17cf48" if darkmode else "#2a731f"
-    ansiRed = "\033[38;5;196m"
-    ansiGrey = "\033[38;5;240m" if darkmode else"\033[38;5;246m"
+    ptBlue = "#45c6ed" if darkmode else "#3344de"
+    ansiErrorRed = "\033[38;5;196m"
+    ansiErrorText = "\033[38;5;210m" if darkmode else "\033[38;5;88m"
+    ansiDiffRed = "\033[38;5;202m" if darkmode else "\033[38;5;124m"
+    ansiDiffGreen = "\033[38;5;50m" if darkmode else "\033[38;5;30m"
+    ansiDebugGrey = "\033[38;5;240m" if darkmode else "\033[38;5;246m"
     ansiReset = "\033[0m"
     # System preferred encoding. Probably UTF-8.
     gpe = gpe()
@@ -87,6 +93,8 @@ class _g():
         '\u0143': "{\\'N}",
         '\u0144': "{\\'n}",
         '\u2010': '-',
+        '\u2013': '--',
+        '\u2014': '---',
     }
 
     # Dictionary containing correct (as listed in CASSI) abbreviations of some journals.
@@ -154,14 +162,23 @@ def _error(msg):
     """
     Generic error printer.
     """
-    print("{}error:{} {}{}{}".format(_g.ansiRed, _g.ansiReset,
-                                     _g.ansiGrey, msg, _g.ansiReset))
+    print("{}error:{} {}{}{}".format(_g.ansiErrorRed, _g.ansiReset,
+                                     _g.ansiErrorText, msg, _g.ansiReset))
     return _exitCode.FAILURE
 
 
 def _debug(msg):
     if _g.debug is True:
-        print("{}{}{}".format(_g.ansiGrey, msg, _g.ansiReset))
+        print("{}{}{}".format(_g.ansiDebugGrey, msg, _g.ansiReset))
+
+
+def _p(n, singular='', plural='s'):
+    """Tells us whether to use plural or singular."""
+    try:  # if n is some iterable
+        n = len(n)
+    except TypeError:
+        pass
+    return singular if n == 1 else plural
 
 
 async def _copy(s):

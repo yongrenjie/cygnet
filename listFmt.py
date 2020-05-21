@@ -117,7 +117,7 @@ def getFS(l):
     return (number_fs, author_fs, year_fs, journal_fs, title_fs)
 
 
-def fmtAuthor(author, style):
+def fmtAuthor(author, style=None):
     """
     Prettify author names.
     """
@@ -152,7 +152,7 @@ def fmtVolInfo(article):
     Returns the string "vol (issue), page-page", or "vol, page-page" if
     no issue number is present.
     """
-    if "issue" in article:
+    if "issue" in article and article["issue"] != "":
         return "{} ({}), {}".format(article["volume"],
                                     article["issue"],
                                     article["pages"])

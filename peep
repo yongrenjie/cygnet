@@ -15,7 +15,7 @@ import prompt_toolkit as pt
 
 import refMgmt
 import listFmt
-from constants import _g, _exitCode, _timedeco, _error, _debug, _copy
+from constants import _g, _p, _exitCode, _timedeco, _error, _debug, _copy
 
 
 class peepPrompt():
@@ -81,6 +81,10 @@ class peepPrompt():
                         editRef(args)
                     elif cmd in ["a", "add"]:                   # ADD
                         addRef(args)
+                    elif cmd in ["d", "del", "delete"]:         # DELETE
+                        await deleteRef(args)
+                    elif cmd in ["u", "up", "update"]:          # UPDATE
+                        await updateRef(args)
                     elif cmd in ["h", "help"]:                  # HELP
                         print(self.intro)
                     elif cmd in ["pee"]:                        # PEE
@@ -153,7 +157,10 @@ def read(args=Path.cwd(), silent=False):
         with open(fname, "r") as fp:
             if not silent:
                 print("read: reading library {}... ".format(fname))
-            _g.articleList = list(yaml.safe_load_all(fp))
+            try:
+                _g.articleList = list(yaml.safe_load_all(fp))
+            except yaml.YAMLError:
+                return _error("read: invalid YAML file {}".format(fname))
             if not silent:
                 print("read: done")
     except FileNotFoundError:  # seems redundant, but ok
@@ -272,7 +279,8 @@ def openRef(args):
     ls = len(_g.articleList)
     if refnos is None or refnos == [] or any(r > ls for r in refnos) \
             or formats is None or any(f not in abbrevs for f in formats):
-        return _error("openRef: invalid argument(s) '{}' given".format(" ".join(args)))
+        return _error("openRef: invalid argument{} '{}' given".format(_p(args),
+                                                                      " ".join(args)))
     # Default format
     if formats == []:
         formats = ['p']
@@ -309,7 +317,8 @@ async def cite(args):
     ls = len(_g.articleList)
     if refnos is None or refnos == [] or any(r > ls for r in refnos) \
             or formats is None or any(f not in abbrevs for f in formats):
-        return _error("cite: invalid argument(s) '{}' given".format(" ".join(args)))
+        return _error("cite: invalid argument{} '{}' given".format(_p(args),
+                                                                   " ".join(args)))
     # Default format = biblatex
     if formats == []:
         formats = ['b']
@@ -339,7 +348,8 @@ def editRef(args):
     # Check the returned values
     ls = len(_g.articleList)
     if refnos is None or refnos == [] or any(r > ls for r in refnos):
-        return _error("editRef: invalid argument(s) '{}' given".format(" ".join(args)))
+        return _error("editRef: invalid argument{} '{}' given".format(_p(args),
+                                                                      " ".join(args)))
 
     # Construct the initial message
     articlesToEdit = []
@@ -360,7 +370,10 @@ def editRef(args):
         # Put the edited metadata back in the article list. If changes have been 
         #  made, increment _g.changes to trigger autosave.
         with open(fname, "r") as fp:
-            editedArticles = list(yaml.safe_load_all(fp))
+            try:
+                editedArticles = list(yaml.safe_load_all(fp))
+            except yaml.YAMLError:
+                return _error("editRef: invalid YAML syntax")
             for (a, r) in zip(editedArticles, refnos):
                 if _g.articleList[r - 1] != a:
                     _g.articleList[r - 1] = deepcopy(a)
@@ -376,6 +389,18 @@ def addRef(args):
     yes = 0
     no = 0
     for doi in args:
+        # Check if it's already in the library
+        found = False
+        for r, art in enumerate(_g.articleList, start=1):
+            if doi == art["doi"]:
+                _error("addRef: DOI '{}' already in library.\n".format(doi) + \
+                       "               Use 'u[pdate] {}' to refresh metadata.".format(r))
+                no += 1
+                found = True
+                break
+        if found:
+            continue
+        # Otherwise, proceed to get the data
         a = refMgmt.getMetadataFromDOI(doi)
         if a is None:
             _error("addRef: invalid DOI '{}'".format(doi))
@@ -390,6 +415,89 @@ def addRef(args):
     _g.changes += yes
 
 
+@_timedeco
+async def updateRef(args):
+    """Update one or more references using the Crossref API.
+    For each reference, prompts the user as to whether they want to update."""
+    if _g.articleList == []:
+        return _error("updateRef: no articles have been loaded")
+    if args == []:
+        return _error("updateRef: no references selected")
+
+    # no formats to process; just refnos
+    refnos = refMgmt.parseRefno(",".join(args))
+    # Check the returned values
+    ls = len(_g.articleList)
+    if refnos is None or refnos == [] or any(r > ls for r in refnos):
+        return _error("updateRef: invalid argument{} '{}' given".format(_p(args),
+                                                                        " ".join(args)))
+
+    # potentially lots of HTTP requests! can we do this asynchronously?
+    for r in refnos:
+        yes = 0
+        aold = _g.articleList[r - 1]
+        anew = refMgmt.getMetadataFromDOI(aold["doi"])
+        if anew is None:
+            _error("updateRef: ref {} has an invalid DOI '{}'".format(r, aold["doi"]))
+        ndiffs = refMgmt.diffArticles(aold, anew)
+        if ndiffs == 0:
+            print("updateRef: no new data for ref {} found on Crossref".format(r))
+        else:
+            # Must use a new PromptSession().prompt_async(), otherwise it gets messed up.
+            msg = "updateRef: accept new data for ref {} (y/n)? ".format(r)
+            style = pt.styles.Style.from_dict({"prompt": "{}".format(_g.ptBlue)})
+            try:
+                ans = await pt.PromptSession().prompt_async(msg, style=style)
+            except (EOFError, KeyboardInterrupt):
+                ans = "no"
+            if ans.strip().lower() in ["", "y", "yes"]:
+                _g.articleList[r - 1] = anew
+                print("updateRef: successfully updated ref {}".format(r))
+                yes += 1
+            else:  # ok, it isn't really (y/n), it's (y/not y)
+                print("updateRef: rejected changes for ref {}".format(r))
+    print("updateRef: {} article{} updated".format(yes, _p(yes)))
+    _g.changes += yes
+    return _exitCode.SUCCESS
+
+
+@_timedeco
+async def deleteRef(args):
+    """Delete one or more references."""
+    if _g.articleList == []:
+        return _error("deleteRef: no articles have been loaded")
+    if args == []:
+        return _error("deleteRef: no references selected")
+
+    # no formats to process; just refnos
+    refnos = refMgmt.parseRefno(",".join(args))
+    # Check the returned values
+    ls = len(_g.articleList)
+    if refnos is None or refnos == [] or any(r > ls for r in refnos):
+        return _error("deleteRef: invalid argument{} '{}' given".format(_p(args),
+                                                                        " ".join(args)))
+
+    # Must use a new PromptSession().prompt_async(), otherwise it gets messed up.
+    yes = 0
+    msg = "deleteRef: really delete ref{} {} (y/n)? ".format(_p(refnos),
+                                                             ", ".join(str(r) for r in refnos))
+    style = pt.styles.Style.from_dict({"prompt": "{}".format(_g.ptBlue)})
+    try:
+        ans = await pt.PromptSession().prompt_async(msg, style=style)
+    except (EOFError, KeyboardInterrupt):
+        ans = "no"
+    if ans.strip().lower() in ["", "y", "yes"]:
+        # Must sort the list in descending order so that you don't get earlier
+        #  deletions affecting later ones!!
+        for r in sorted(refnos, reverse=True):
+            del _g.articleList[r - 1]
+            yes += 1
+        print("deleteRef: {} ref{} deleted".format(yes, _p(yes)))
+        _g.changes += yes
+    else:
+        print("deleteRef: no refs deleted")
+    return _exitCode.SUCCESS
+
 
 #############################################################################
 #### Coroutine to autosave current list at regular intervals.
@@ -402,7 +510,7 @@ async def _autosave():
             # Right now we only have one article list at a time, and
             #  changes just contains sentinel values.
             if _g.articleList and _g.currentPath and _g.changes > 0:
-                _debug("autosave: found {} change(s)".format(_g.changes))
+                _debug("autosave: found {} change".format(_g.changes, _p(_g.changes)))
                 write(silent=True)
                 _debug("autosave complete")
                 _g.changes = 0
