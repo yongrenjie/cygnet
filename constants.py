@@ -14,16 +14,16 @@ from pathlib import Path
 from functools import wraps
 from time import time
 
-from crossref.restful import Etiquette
+from crossref.restful import Works, Etiquette
 
 
 class _g():
     # Storage of global variables.
     version_number = "0.1"
-    my_etiquette = Etiquette('PeepLaTeX',
-                             version_number,
-                             'https://github.com/yongrenjie',
-                             'yongrenjie@gmail.com')
+    myEtiquette = Etiquette('PeepLaTeX',
+                            version_number,
+                            'https://github.com/yongrenjie',
+                            'yongrenjie@gmail.com')
     # List of dictionaries, each containing a single article.
     articleList = []
     # pathlib.Path object pointing to the current database.
@@ -54,6 +54,8 @@ class _g():
     ansiReset = "\033[0m"
     # System preferred encoding. Probably UTF-8.
     gpe = gpe()
+    # Crossref object.
+    works = Works(etiquette=myEtiquette)
 
     unicodeLatexDict = {
         '\u00c0': '{\\`A}', '\u00c1': "{\\'A}", '\u00c2': '{\\^A}', '\u00c3': '{\\~A}',
@@ -101,6 +103,13 @@ class _g():
         "Journal of Magnetic Resonance, Series B": "J. Magn. Reson., Ser. B",
         "J Biomol NMR": "J. Biomol. NMR",
         }
+
+    # Dictionary containing short forms for common terms in journal names, which can be
+    #  used when printing lists of articles (to save space). OK this is a bit small, but
+    #  in principle we can expand this in future.
+    jNameAbbrevs = {
+        "Nucl Magn Reson": "NMR",
+    }
 
 
 class _exitCode(Enum):

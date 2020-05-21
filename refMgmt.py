@@ -2,6 +2,7 @@
 This module contains helper functions which act on PDFs or DOIs.
 """
 
+import re
 import subprocess
 from pathlib import Path
 from copy import deepcopy
@@ -30,36 +31,6 @@ def parseRefnoFormat(args, abbrevs=None):
     argFormat = argstr[x:]
 
     return (parseRefno(argRefno), parseFormat(argFormat))
-
-
-def openDOIType(doi, refno, fmt, p):
-    """Opens a DOI as an article PDF, SI PDF, or web page."""
-
-    # Get the link to the pdf / website
-    if fmt == 'p':
-        fname = p.parent / "pdf" / "{}.pdf".format(doi).replace("/","#")
-        fname = fname.resolve()
-        if not fname.exists():
-            return _error("openDOIType: ref {} (p): file {} not found".format(refno, fname))
-    elif fmt == 's':
-        fname = p.parent / "si" / "{}.pdf".format(doi).replace("/","#")
-        fname = fname.resolve()
-        if not fname.exists():
-            return _error("openDOIType: ref {} (s): file {} not found".format(refno, fname))
-    elif fmt == 'w':
-        fname = "https://doi.org/{}".format(doi)
-    else:
-        # should never reach here because openRef has argument checking
-        raise ValueError("openDOIType: incorrect fmt {} received".format(fmt))
-
-    # Open the thing, error out if it can't be found
-    try:
-        subprocess.run(["open", fname], check=True, capture_output=True)
-    except subprocess.CalledProcessError:
-        return _error("openDOIType: ref {}: file {} could not be opened".format(refno, fname))
-    else:
-        ec = _exitCode.SUCCESS
-    return ec
 
 
 def parseRefno(s):
@@ -112,6 +83,43 @@ def parseFormat(s):
         return t
 
 
+def unicode2Latex(s):
+    """Replaces Unicode characters in a string with their LaTeX equivalents."""
+    for char in _g.unicodeLatexDict:
+        s = s.replace(char, _g.unicodeLatexDict[char])
+    return s
+
+
+def openDOIType(doi, refno, fmt, p):
+    """Opens a DOI as an article PDF, SI PDF, or web page."""
+
+    # Get the link to the pdf / website
+    if fmt == 'p':
+        fname = p.parent / "pdf" / "{}.pdf".format(doi).replace("/","#")
+        fname = fname.resolve()
+        if not fname.exists():
+            return _error("openDOIType: ref {} (p): file {} not found".format(refno, fname))
+    elif fmt == 's':
+        fname = p.parent / "si" / "{}.pdf".format(doi).replace("/","#")
+        fname = fname.resolve()
+        if not fname.exists():
+            return _error("openDOIType: ref {} (s): file {} not found".format(refno, fname))
+    elif fmt == 'w':
+        fname = "https://doi.org/{}".format(doi)
+    else:
+        # should never reach here because openRef has argument checking
+        raise ValueError("openDOIType: incorrect fmt {} received".format(fmt))
+
+    # Open the thing, error out if it can't be found
+    try:
+        subprocess.run(["open", fname], check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        return _error("openDOIType: ref {}: file {} could not be opened".format(refno, fname))
+    else:
+        ec = _exitCode.SUCCESS
+    return ec
+
+
 def makeCitation(article, fmt):
     """Takes an article dictionary and returns it in a suitable plaintext format.
 
@@ -127,56 +135,86 @@ def makeCitation(article, fmt):
 
     # Markdown short & long
     elif fmt == 'm':
-        a["page"] = a["page"].replace('-','\u2013')   # en dash for page number
+        a["pages"] = a["pages"].replace('-','\u2013')   # en dash for page number
         if "issue" in a:
             return "*{}* **{}**, *{}* ({}), {}. [DOI: {}](https://doi.org/{}).".format(
-                a["journal_short"], a["year"], a["volume"],
-                a["issue"], a["page"], a["doi"], a["doi"]
+                a["journalShort"], a["year"], a["volume"],
+                a["issue"], a["pages"], a["doi"], a["doi"]
             )
         else:
             return "*{}* **{}**, *{},* {}. [DOI: {}](https://doi.org/{}).".format(
-                a["journal_short"], a["year"], a["volume"],
-                a["page"], a["doi"], a["doi"]
+                a["journalShort"], a["year"], a["volume"],
+                a["pages"], a["doi"], a["doi"]
             )
     elif fmt == 'M':
         authorString = "; ".join((listFmt.fmtAuthor(auth, "acs") for auth in a["authors"]))
         if "issue" in a:
             return "{} {}. *{}* **{}**, *{}* ({}), {}. [DOI: {}](https://doi.org/{}).".format(
-                authorString, a["title"], a["journal_short"], a["year"], a["volume"],
-                a["issue"], a["page"], a["doi"], a["doi"]
+                authorString, a["title"], a["journalShort"], a["year"], a["volume"],
+                a["issue"], a["pages"], a["doi"], a["doi"]
             )
         else:
             return "{} {}. *{}* **{}**, *{},* {}. [DOI: {}](https://doi.org/{}).".format(
-                authorString, a["title"], a["journal_short"], a["year"], a["volume"],
-                a["page"], a["doi"], a["doi"]
+                authorString, a["title"], a["journalShort"], a["year"], a["volume"],
+                a["pages"], a["doi"], a["doi"]
             )
 
     # BibLaTeX
     elif fmt == 'b':
         refName = unidecode(a["authors"][0]["family"]) + \
             str(a["year"]) + \
-            "".join(c for c in "".join(w for w in a["journal_long"].split()
-                                       if w.lower() not in ["a", "an", "the"])
+            "".join(c for c in "".join(w for w in a["journalShort"].split())
                     if c.isupper())
         authNames = " and ".join(unicode2Latex(listFmt.fmtAuthor(auth, style="bib"))
                                  for auth in a["authors"])
         s = "@article{{{},\n".format(refName) + \
-                       "    doi = {{{}}},\n".format(a["doi"]) + \
-                       "    author = {{{}}},\n".format(authNames) + \
-                       "    journal = {{{}}},\n".format(a["journal_short"]) + \
-                       "    title = {{{}}},\n".format(a["title"]) + \
-                       "    year = {{{}}},\n".format(a["year"]) + \
-                      ("    volume = {{{}}},\n".format(a["volume"]) if "volume" in a else "") + \
-                      ("    issue = {{{}}},\n".format(a["issue"]) if "issue" in a else "") + \
-                      ("    pages = {{{}}},\n".format(a["page"]) if "page" in a else "") + \
-                       "}"
+            "    doi = {{{}}},\n".format(a["doi"]) + \
+            "    author = {{{}}},\n".format(authNames) + \
+            "    journal = {{{}}},\n".format(a["journalShort"]).replace(". ", ".\\ ") + \
+            "    title = {{{}}},\n".format(unicode2Latex(a["title"])) + \
+            "    year = {{{}}},\n".format(a["year"]) + \
+            ("    volume = {{{}}},\n".format(a["volume"]) if "volume" in a else "") + \
+            ("    issue = {{{}}},\n".format(a["issue"]) if "issue" in a else "") + \
+            ("    pages = {{{}}},\n".format(a["pages"]) if "pages" in a else "").replace("-","--") + \
+            "}"
         return s
     else:
         raise ValueError("makeCitation: incorrect fmt {} received".format(fmt))
 
 
-def unicode2Latex(s):
-    """Replaces Unicode characters in a string with their LaTeX equivalents."""
-    for char in _g.unicodeLatexDict:
-        s = s.replace(char, _g.unicodeLatexDict[char])
-    return s
+def getMetadataFromDOI(doi):
+    """Uses Crossref API to obtain article metadata using a DOI. Returns a
+    dictionary that is immediately suitable for use in _g.articleList, or None
+    if the DOI is invalid.
+
+    Incorrect journal short forms are corrected here. The dictionary containing
+    the corrections is stored in _g.
+    """
+    d = _g.works.doi(doi)
+    if d is None:   # lookup failed
+        return None
+    else:
+        a = {}
+        a["doi"] = doi
+        a["authors"] = [{"family": auth["family"], "given": auth["given"]}
+                        for auth in d["author"]]
+        a["year"] = int(d["published-print"]["date-parts"][0][0]) \
+            if "published-print" in d else int(d["published-online"]["date-parts"][0][0])
+        a["journalLong"] = d["container-title"][0]
+        a["journalShort"] = d["short-container-title"][0] \
+            if "short-container-title" in d else a["journalLong"]
+        if a["journalShort"] in _g.journalReplacements:
+            a["journalShort"] = _g.journalReplacements[a["journalShort"]]
+        a["title"] = d["title"][0]
+        a["volume"] = int(d["volume"]) if "volume" in d else ""
+        a["issue"] = int(d["issue"]) if "issue" in d else ""
+        a["pages"] = d["page"] if "page" in d else ""
+        return a
+
+
+def getDOIFromPDF(p):
+    """Attempts to get a DOI from a PDF.
+
+    This method is *very* crude. It just utilises strings(1) and some magic regexes."""
+    pass
+

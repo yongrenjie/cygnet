@@ -4,6 +4,8 @@ This module provides tools for list printing.
 
 import os
 
+from constants import _g
+
 
 def printListHead(layout_str, fss):
     """
@@ -40,7 +42,7 @@ def listOneArticle(i, a, layout_str, fss):
     print(layout_str.format(i, number_fs,
                             fmtAuthor(first_author, style="display"), author_fs,
                             a["year"], year_fs,
-                            a["journal_short"].replace(".",""), journal_fs,
+                            fmtJournalShort(a["journalShort"]), journal_fs,
                             a["title"][:title_fs], title_fs))
     # cut off the first author
     a["title"] = a["title"][title_fs:]
@@ -103,7 +105,7 @@ def getFS(l):
                     len("Authors")
                     ) + spaces
     year_fs = 4 + spaces
-    journal_fs = max(max(len(art["journal_short"].replace(".","")) for art in l),
+    journal_fs = max(max(len(fmtJournalShort(art["journalShort"])) for art in l),
                      max(len(fmtVolInfo(art)) for art in l),
                      len("Journal info")
                      ) + spaces
@@ -138,7 +140,8 @@ def fmtAuthor(author, style):
         return author["family"] + ", " + ". ".join(n[0] for n in given_names.split()) + "."
     # Jonathan R. J. Yong -> Yong, Jonathan R. J.
     elif style == "bib":
-        return author["family"] + ", " + author["given"]
+        # must remember to use control spaces.
+        return (author["family"] + ", " + author["given"]).replace(". ", ".\\ ")
     # Otherwise just return the name as a string
     else:
         return given_names + " " + family_name
@@ -152,7 +155,16 @@ def fmtVolInfo(article):
     if "issue" in article:
         return "{} ({}), {}".format(article["volume"],
                                     article["issue"],
-                                    article["page"])
+                                    article["pages"])
     else:
         return "{}, {}".format(article["volume"],
-                               article["page"])
+                               article["pages"])
+
+
+def fmtJournalShort(jname):
+    """Condenses the short journal name to something that's as readable as possible.
+    This mainly works by stripping periods, but there are also some useful acronyms."""
+    jname = jname.replace(".", "")
+    for long, short in _g.jNameAbbrevs.items():
+        jname = jname.replace(long, short)
+    return jname

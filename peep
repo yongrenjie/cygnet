@@ -79,6 +79,8 @@ class peepPrompt():
                         read(args)
                     elif cmd in ["e", "edit"]:                  # EDIT
                         editRef(args)
+                    elif cmd in ["a", "add"]:                   # ADD
+                        addRef(args)
                     elif cmd in ["h", "help"]:                  # HELP
                         print(self.intro)
                     elif cmd in ["pee"]:                        # PEE
@@ -355,13 +357,38 @@ def editRef(args):
     except subprocess.CalledProcessError:   # e.g. :cq
         return _error("editRef: vim quit unexpectedly; no changes made")
     else:
-        # Put the edited metadata back in the article list.
+        # Put the edited metadata back in the article list. If changes have been 
+        #  made, increment _g.changes to trigger autosave.
         with open(fname, "r") as fp:
             editedArticles = list(yaml.safe_load_all(fp))
             for (a, r) in zip(editedArticles, refnos):
-                _g.articleList[r - 1] = deepcopy(a)
-        # Register changes to trigger autosave.
-        _g.changes += len(refnos)
+                if _g.articleList[r - 1] != a:
+                    _g.articleList[r - 1] = deepcopy(a)
+                    _g.changes += 1
+        return _exitCode.SUCCESS
+
+
+@_timedeco
+def addRef(args):
+    """Adds one or more references (passed as DOIs) to the article list."""
+    if args == []:
+        return _error("addRef: no DOIs provided")
+    yes = 0
+    no = 0
+    for doi in args:
+        a = refMgmt.getMetadataFromDOI(doi)
+        if a is None:
+            _error("addRef: invalid DOI '{}'".format(doi))
+            no += 1
+            continue
+        else:
+            print("addRef: added DOI '{}'".format(doi))
+            print(a)
+            yes += 1
+            _g.articleList.append(a)
+    print("addRef: {} DOIs added, {} failed".format(yes, no))
+    _g.changes += yes
+
 
 
 #############################################################################
