@@ -7,11 +7,11 @@ import asyncio
 from copy import deepcopy
 from pathlib import Path
 from enum import Enum
-from locale import getpreferredencoding
 from datetime import datetime
 
 import yaml
 import prompt_toolkit as pt
+import pyperclip as pc
 
 import refMgmt
 import listFmt
@@ -51,24 +51,35 @@ class peepPrompt():
                         continue
                     else:
                         cmd, args = x[0], x[1:]
+                    cmd = cmd.lstrip(":")  # I have typed in :q more than once
 
-                    if cmd in ["q", "quit"]:            # QUIT
+                    # If any numbers are in the cmd, separate the bit with 
+                    #  a number and prepend it to args. This allows us to do
+                    #  things like "o1" instead of "o 1". Yes I'm lazy.
+                    n = next((i for i, c in enumerate(cmd) if c.isdigit()), len(cmd))
+                    if n < len(cmd):
+                        args = [cmd[n:]] + args
+                        cmd = cmd[:n]
+
+                    if cmd in ["q", "quit", "zzzpeep"]:         # QUIT
                         break
-                    elif cmd in ["o", "open"]:          # OPEN
+                    elif cmd in ["c", "cite"]:                  # CITE
+                        cite(args)
+                    elif cmd in ["o", "open"]:                  # OPEN
                         openRef(args)
-                    elif cmd in ["w", "write"]:         # WRITE
+                    elif cmd in ["w", "write"]:                 # WRITE
                         write(args)
-                    elif cmd in ["l", "ls", "list"]:    # LIST
+                    elif cmd in ["l", "ls", "list"]:            # LIST
                         listArticles()
-                    elif cmd in ["r", "read"]:          # READ
+                    elif cmd in ["r", "read"]:                  # READ
                         read(args)
-                    elif cmd in ["h", "help"]:          # HELP
+                    elif cmd in ["h", "help"]:                  # HELP
                         print(self.intro)
-                    elif cmd in ["pee"]:                # PEE
-                        print("zzzpeep")
-                    elif cmd in ["peep"]:               # PEEP
+                    elif cmd in ["pee"]:                        # PEE
+                        print("zzzpee...")
+                    elif cmd in ["peep", "PEEP"]:               # PEEP
                         print("PEEP!")
-                    else:                               # unknown
+                    else:                                       # unknown
                         _error("command '{}' not recognised".format(cmd))
 
                     # Need a tiny sleep to paper over a weird bug.
@@ -79,7 +90,7 @@ class peepPrompt():
                     #  this sleep. With 3 references, printing takes a
                     #  fraction of a millisecond. With 300 references
                     #  it takes about 60 ms.
-                    await asyncio.sleep(0.2)   # 200 ms.
+                    await asyncio.sleep(0.1)   # 100 ms.
         return
 
 
@@ -110,7 +121,7 @@ def read(args=Path.cwd(), silent=False):
     try:
         p = Path(args)
     except TypeError:   # not castable
-        return _error("invalid argument '{}' provided to read()".format(args))
+        return _error("read: invalid argument '{}'".format(args))
     # If it points to an existing directory, load db.yaml from there
     if p.is_dir() and p.exists():
         p = p / "db.yaml"
@@ -123,22 +134,22 @@ def read(args=Path.cwd(), silent=False):
         write()
     elif _g.articleList and not _g.currentPath:
         # list was created from scratch
-        return _error("current library has not been saved")
+        return _error("read: current library has not been saved, cannot read a new list")
 
     # Check if the yaml file exists
     if not fname.exists():
-        return _error("file {} not found".format(fname))
+        return _error("read: file {} not found".format(fname))
 
     # Read in the yaml file
     try:
         with open(fname, "r") as fp:
             if not silent:
-                print("reading library {}... ".format(fname))
+                print("read: reading library {}... ".format(fname))
             _g.articleList = list(yaml.safe_load_all(fp))
             if not silent:
-                print("read done")
+                print("read: done")
     except FileNotFoundError:  # seems redundant, but ok
-        return _error("file {} not found".format(fname))
+        return _error("read: file {} not found".format(fname))
     else:
         # Backup the new article list before doing anything, but only if
         #  it's really a new article...
@@ -170,7 +181,7 @@ def write(args=None, silent=False):
     try:
         fname = Path(args)
     except TypeError:  # not castable
-        return _error("invalid argument '{}' provided to write()".format(args))
+        return _error("write: invalid argument '{}'".format(args))
 
     # Determine output location
     if fname.is_dir() and fname.exists():
@@ -180,12 +191,12 @@ def write(args=None, silent=False):
     try:
         with open(fname, "w") as fp:
             if not silent:
-                print("writing current library to {}... ".format(fname))
+                print("write: writing current library to {}... ".format(fname))
             yaml.dump_all(_g.articleList, fp)
             if not silent:
-                print("write done")
+                print("write: done")
     except FileNotFoundError:
-        return _error("directory {} does not exist".format(fname.parent))
+        return _error("write: directory {} does not exist".format(fname.parent))
 
     return _exitCode.SUCCESS
 
@@ -229,7 +240,7 @@ def listArticles(articles=None, type="long"):
         listFmt.listOneArticle(n, l[n - 1], layout_str, fss)
         return _exitCode.SUCCESS
     else:
-        return _error("invalid type '{}' provided to listArticles")
+        return _error("listArticles: invalid type '{}'".format(type))
 
 
 @timedeco
@@ -240,44 +251,71 @@ def openRef(args):
     Takes a list of arguments.
     """
     if _g.articleList == []:
-        return _error("no articles have been loaded")
-    # Preprocess args, converting ["1", "2", "3", "p"] -> ["1,2,3,", "p"]
-    argstr = ",".join(args)
-    # Accept long forms
-    argstr = argstr.replace("pdf","p").replace("si","s").replace("web","w")
-    # Find the first character in argstr that isn't [0-9,-]
-    x = next((i for i, c in enumerate(argstr) if c not in "1234567890,-"), len(argstr))
-    # Then repackage them
-    argRefno = argstr[:x].rstrip(",")
-    argFormat = argstr[x:].replace(",","").strip()
+        return _error("openRef: no articles have been loaded")
+    if args == []:
+        return _error("openRef: no references selected")
+    # Process args
+    abbrevs = {"p": "pdf",
+               "s": "si",
+               "w": "web"}
+    refnos, formats = refMgmt.parseRefnoFormat(args, abbrevs=abbrevs)
 
-    # Parse reference number(s)
-    refnos = refMgmt.parseRefNo(argRefno)
-    # Check the returned value
+    # Check the returned values
     ls = len(_g.articleList)
-    if refnos is None or any(r > ls for r in refnos):
-        return _error("invalid reference number(s) '{}' given".format(argRefno))
-    # Parse format(s)
-    if argFormat == "":
-        formats = ['p']  # if no format specified, assume pdf
-    else:
-        formats = list(argFormat)
-        # Check for invalid formats
-        if any([i not in list("psw") for i in formats]):
-            return _error("invalid format(s) '{}' given".format(argFormat))
+    if refnos is None or refnos == [] or any(r > ls for r in refnos) \
+            or formats is None or any(f not in abbrevs for f in formats):
+        return _error("openRef: invalid argument(s) '{}' given".format(" ".join(args)))
+    # Default format
+    if formats == []:
+        formats = ['p']
 
     # Open the references
-    dfs = ((_g.articleList[r - 1]["doi"], f) for r in refnos for f in formats)
+    drfs = ((_g.articleList[r - 1]["doi"], r, f) for r in refnos for f in formats)
     # open(1) is really fast, so it doesn't seem like this could be a problem unless we
     #  are opening tons and tons of references. But if it does then we may want to use
     #  some concurrency methods.
-    for df in dfs:
-        refMgmt.openDOIType(*df, _g.currentPath)
+    for drf in drfs:
+        refMgmt.openDOIType(*drf, _g.currentPath)
     return _exitCode.SUCCESS
 
 
 @timedeco
-def cite():
+def cite(args):
+    """Prints citation for one or more references in the form of DOI, BibLaTeX, or
+    Markdown (e.g. for use on Stack Exchange).
+
+    Also copies the citation text to system clipboard.
+    """
+    if _g.articleList == []:
+        return _error("cite: no articles have been loaded")
+    if args == []:
+        return _error("cite: no references selected")
+    # Process args
+    abbrevs = {"d": "doi",
+               "b": "bib",
+               "m": "md",
+               "M": "MD"}
+    refnos, formats = refMgmt.parseRefnoFormat(args, abbrevs=abbrevs)
+
+    # Check the returned values
+    ls = len(_g.articleList)
+    if refnos is None or refnos == [] or any(r > ls for r in refnos) \
+            or formats is None or any(f not in abbrevs for f in formats):
+        return _error("cite: invalid argument(s) '{}' given".format(" ".join(args)))
+    # Default format
+    if formats == []:
+        formats = ['d']
+
+    sep = ""  # Need a newline between citations if there is more than one.
+    afs = ((_g.articleList[r - 1], f) for r in refnos for f in formats)
+    citation = ""
+    for af in afs:
+        citation += sep
+        citation += refMgmt.makeCitation(*af)
+        if len(refnos) > 1 or len(formats) > 1:
+            sep = "\n\n" if af[1] in "Mm" else "\n"
+    print(citation)
+    pc.copy(citation)
     pass
 
 

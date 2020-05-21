@@ -4,42 +4,64 @@ This module contains helper functions which act on PDFs or DOIs.
 
 import subprocess
 from pathlib import Path
+from copy import deepcopy
 
 from crossref.restful import Works
 
 from constants import _g, _exitCode, _error, _debug
+import listFmt
 
 
-def openDOIType(doi, format, p):
+def parseRefnoFormat(args, abbrevs=None):
+    """Parses a list of reference numbers + formats from the prompt.
+    Does some preprocessing then delegates to parseRefno and parseFormat.
+    Useful for commands o(pen) and c(ite)."""
+    # Preprocess args
+    argstr = ",".join(args)
+    # Replace long forms with short forms, e.g. pdf -> p for openRef()
+    if abbrevs is not None:
+        for shortForm, longForm in abbrevs.items():
+            argstr = argstr.replace(longForm, shortForm)
+    # Find the first character in argstr that isn't [0-9,-]
+    x = next((i for i, c in enumerate(argstr) if c not in "1234567890,-"), len(argstr))
+    # Then repackage them
+    argRefno = argstr[:x]
+    argFormat = argstr[x:]
+
+    return (parseRefno(argRefno), parseFormat(argFormat))
+
+
+def openDOIType(doi, refno, fmt, p):
     """Opens a DOI as an article PDF, SI PDF, or web page."""
 
     # Get the link to the pdf / website
-    if format == 'p':
+    if fmt == 'p':
         fname = p.parent / "pdf" / "{}.pdf".format(doi).replace("/","#")
         fname = fname.resolve()
         if not fname.exists():
-            return _error("ref {} (p): file {} not found".format(refno, fname))
-    elif format == 's':
+            return _error("openDOIType: ref {} (p): file {} not found".format(refno, fname))
+    elif fmt == 's':
         fname = p.parent / "si" / "{}.pdf".format(doi).replace("/","#")
         fname = fname.resolve()
         if not fname.exists():
-            return _error("ref {} (s): file {} not found".format(refno, fname))
-    elif format == 'w':
+            return _error("openDOIType: ref {} (s): file {} not found".format(refno, fname))
+    elif fmt == 'w':
         fname = "https://doi.org/{}".format(doi)
     else:
-        raise RuntimeError("AGH!!! _openDOIType() got an argument it shouldn't have!")
+        # should never reach here because openRef has argument checking
+        raise ValueError("openDOIType: incorrect fmt {} received".format(fmt))
 
     # Open the thing, error out if it can't be found
     try:
         subprocess.run(["open", fname], check=True, capture_output=True)
     except subprocess.CalledProcessError:
-        return _error("ref {}: file {} could not be opened".format(refno, fname))
+        return _error("openDOIType: ref {}: file {} could not be opened".format(refno, fname))
     else:
         ec = _exitCode.SUCCESS
     return ec
 
 
-def parseRefNo(s):
+def parseRefno(s):
     """
     Takes a string s and returns a list of int reference numbers.
     Returns None if any error is found.
@@ -51,6 +73,8 @@ def parseRefNo(s):
     t = []
     try:
         for i in s:
+            if i == "":
+                continue
             if "-" in i:
                 min, max = i.split("-")   # ValueError if too many entries
                 if min >= max:
@@ -59,7 +83,71 @@ def parseRefNo(s):
                     t.append(m)
             else:
                 t.append(int(i))          # ValueError if not castable to int
-    except ValueError:
+    except (ValueError, TypeError):
+        # ValueError -- something couldn't be casted to int
+        # TypeError  -- input wasn't iterable
         return None
     else:
         return t
+
+
+def parseFormat(s):
+    """
+    Takes a string s and returns a list of [A-Za-z] characters inside.
+    If there aren't any such characters, this returns an empty list, not None.
+    If the input is invalid (e.g. it's not iterable, or a list of ints), then
+     it returns None.
+    """
+    t = []
+    try:
+        for i in s:
+            if i.isalpha():
+                t.append(i)
+    except (AttributeError, TypeError):
+        # AttributeError -- isalpha() failed (e.g. integers)
+        # TypeError      -- input wasn't iterable
+        return None
+    else:
+        return t
+
+
+def makeCitation(article, fmt):
+    """Takes an article dictionary and returns it in a suitable plaintext format.
+
+    Formats allowed (so far):
+     - 'b': BibLaTeX.
+     - 'd': DOI only.
+     - 'm': Short Markdown. Only has journal, year, volume, issue, pages, DOI.
+     - 'M": Long Markdown. Includes author names and title as well.
+    """
+    a = deepcopy(article)
+    if fmt == 'd':
+        return a["doi"]
+    elif fmt == 'm':
+        a["page"] = a["page"].replace('-','\u2013')   # en dash for page number
+        if "issue" in a:
+            return "*{}* **{}**, *{}* ({}), {}. [DOI: {}](https://doi.org/{}).".format(
+                a["journal_short"], a["year"], a["volume"],
+                a["issue"], a["page"], a["doi"], a["doi"]
+            )
+        else:
+            return "*{}* **{}**, *{},* {}. [DOI: {}](https://doi.org/{}).".format(
+                a["journal_short"], a["year"], a["volume"],
+                a["page"], a["doi"], a["doi"]
+            )
+    elif fmt == 'M':
+        authorString = "; ".join((listFmt.fmtAuthor(auth, "acs") for auth in a["authors"]))
+        if "issue" in a:
+            return "{} {}. *{}* **{}**, *{}* ({}), {}. [DOI: {}](https://doi.org/{}).".format(
+                authorString, a["title"], a["journal_short"], a["year"], a["volume"],
+                a["issue"], a["page"], a["doi"], a["doi"]
+            )
+        else:
+            return "{} {}. *{}* **{}**, *{},* {}. [DOI: {}](https://doi.org/{}).".format(
+                authorString, a["title"], a["journal_short"], a["year"], a["volume"],
+                a["page"], a["doi"], a["doi"]
+            )
+    elif fmt == 'b':
+        return None
+    else:
+        raise ValueError("makeCitation: incorrect fmt {} received".format(fmt))
