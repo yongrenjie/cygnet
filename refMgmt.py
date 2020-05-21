@@ -7,6 +7,7 @@ from pathlib import Path
 from copy import deepcopy
 
 from crossref.restful import Works
+from unidecode import unidecode
 
 from constants import _g, _exitCode, _error, _debug
 import listFmt
@@ -123,6 +124,8 @@ def makeCitation(article, fmt):
     a = deepcopy(article)
     if fmt == 'd':
         return a["doi"]
+
+    # Markdown short & long
     elif fmt == 'm':
         a["page"] = a["page"].replace('-','\u2013')   # en dash for page number
         if "issue" in a:
@@ -147,7 +150,33 @@ def makeCitation(article, fmt):
                 authorString, a["title"], a["journal_short"], a["year"], a["volume"],
                 a["page"], a["doi"], a["doi"]
             )
-    elif fmt == 'b':
 
+    # BibLaTeX
+    elif fmt == 'b':
+        refName = unidecode(a["authors"][0]["family"]) + \
+            str(a["year"]) + \
+            "".join(c for c in "".join(w for w in a["journal_long"].split()
+                                       if w.lower() not in ["a", "an", "the"])
+                    if c.isupper())
+        authNames = " and ".join(unicode2Latex(listFmt.fmtAuthor(auth, style="bib"))
+                                 for auth in a["authors"])
+        s = "@article{{{},\n".format(refName) + \
+                       "    doi = {{{}}},\n".format(a["doi"]) + \
+                       "    author = {{{}}},\n".format(authNames) + \
+                       "    journal = {{{}}},\n".format(a["journal_short"]) + \
+                       "    title = {{{}}},\n".format(a["title"]) + \
+                       "    year = {{{}}},\n".format(a["year"]) + \
+                      ("    volume = {{{}}},\n".format(a["volume"]) if "volume" in a else "") + \
+                      ("    issue = {{{}}},\n".format(a["issue"]) if "issue" in a else "") + \
+                      ("    pages = {{{}}},\n".format(a["pages"]) if "pages" in a else "") + \
+                       "}"
+        return s
     else:
         raise ValueError("makeCitation: incorrect fmt {} received".format(fmt))
+
+
+def unicode2Latex(s):
+    """Replaces Unicode characters in a string with their LaTeX equivalents."""
+    for char in _g.unicodeLatexDict:
+        s = s.replace(char, _g.unicodeLatexDict[char])
+    return s

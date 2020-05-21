@@ -136,6 +136,9 @@ def fmtAuthor(author, style):
     # Jonathan R. J. Yong -> Yong, J. R. J.
     elif style == "acs":
         return author["family"] + ", " + ". ".join(n[0] for n in given_names.split()) + "."
+    # Jonathan R. J. Yong -> Yong, Jonathan R. J.
+    elif style == "bib":
+        return author["family"] + ", " + author["given"]
     # Otherwise just return the name as a string
     else:
         return given_names + " " + family_name

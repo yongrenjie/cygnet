@@ -4,14 +4,14 @@ import os
 import sys
 import subprocess
 import asyncio
-from copy import deepcopy
 from pathlib import Path
+from copy import deepcopy
 from enum import Enum
 from datetime import datetime
+from tempfile import NamedTemporaryFile
 
 import yaml
 import prompt_toolkit as pt
-import pyperclip as pc
 
 import refMgmt
 import listFmt
@@ -73,6 +73,8 @@ class peepPrompt():
                         listArticles()
                     elif cmd in ["r", "read"]:                  # READ
                         read(args)
+                    elif cmd in ["e", "edit"]:                  # EDIT
+                        editRef(args)
                     elif cmd in ["h", "help"]:                  # HELP
                         print(self.intro)
                     elif cmd in ["pee"]:                        # PEE
@@ -302,9 +304,9 @@ async def cite(args):
     if refnos is None or refnos == [] or any(r > ls for r in refnos) \
             or formats is None or any(f not in abbrevs for f in formats):
         return _error("cite: invalid argument(s) '{}' given".format(" ".join(args)))
-    # Default format
+    # Default format = biblatex
     if formats == []:
-        formats = ['d']
+        formats = ['b']
 
     sep = ""  # Need a newline between citations if there is more than one.
     afs = ((_g.articleList[r - 1], f) for r in refnos for f in formats)
@@ -313,26 +315,66 @@ async def cite(args):
         citation += sep
         citation += refMgmt.makeCitation(*af)
         if len(refnos) > 1 or len(formats) > 1:
-            sep = "\n\n" if af[1] in "Mm" else "\n"
+            sep = "\n\n" if af[1] in "bMm" else "\n"
     print(citation)
     await _copy(citation)
+
+
+@_timedeco
+def editRef(args):
+    """Edits one or more references using vim."""
+    if _g.articleList == []:
+        return _error("editRef: no articles have been loaded")
+    if args == []:
+        return _error("editRef: no references selected")
+
+    # no formats to process; just refnos
+    refnos = refMgmt.parseRefno(",".join(args))
+    # Check the returned values
+    ls = len(_g.articleList)
+    if refnos is None or refnos == [] or any(r > ls for r in refnos):
+        return _error("editRef: invalid argument(s) '{}' given".format(" ".join(args)))
+
+    # Construct the initial message
+    articlesToEdit = []
+    for r in refnos:
+        articlesToEdit.append(deepcopy(_g.articleList[r - 1]))
+    # Create and write data to temp file.
+    # Suffix is needed so that vim syntax highlighting is enabled. :)
+    fname = NamedTemporaryFile(suffix=".yaml").name
+    with open(fname, 'wb') as fp:
+        yaml.dump_all(articlesToEdit, fp, encoding=_g.gpe)
+    # Open the file in vim. Vim's stdin and stdout need to be from/to a terminal.
+    # This is already the case for stdin, but we need to set stdout manually.
+    try:
+        subprocess.run(["vim", fname], stdout=open('/dev/tty', 'wb'), check=True)
+    except subprocess.CalledProcessError:   # e.g. :cq
+        return _error("editRef: vim quit unexpectedly; no changes made")
+    else:
+        # Put the edited metadata back in the article list.
+        with open(fname, "r") as fp:
+            editedArticles = list(yaml.safe_load_all(fp))
+            for (a, r) in zip(editedArticles, refnos):
+                _g.articleList[r - 1] = deepcopy(a)
+        # Register changes to trigger autosave.
+        _g.changes += len(refnos)
 
 
 #############################################################################
 #### Coroutine to autosave current list at regular intervals.
 
 async def _autosave():
-    # Saves _g.articleList to _g.currentPath if both are not empty
+    # Saves _g.articleList to _g.currentPath if changes have been made.
     while True:
         try:
             await asyncio.sleep(_g.autosaveInterval)
             # Right now we only have one article list at a time, and
-            #  changes_made just contains sentinel values.
+            #  changes just contains sentinel values.
             if _g.articleList and _g.currentPath and _g.changes > 0:
                 _debug("autosave: found {} change(s)".format(_g.changes))
                 write(silent=True)
                 _debug("autosave complete")
-                changes = 0
+                _g.changes = 0
         except asyncio.CancelledError:
             break
 
