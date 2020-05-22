@@ -8,30 +8,50 @@ It also contains trivial functions that are used repeatedly throughout the code.
 import sys
 import subprocess
 import asyncio
-from locale import getpreferredencoding as gpe
+from locale import getpreferredencoding
 from enum import Enum
 from pathlib import Path
 from functools import wraps
 from time import time
+from copy import deepcopy
+from operator import itemgetter
+from collections import deque
 
 from crossref.restful import Works, Etiquette
 
 
 class _g():
-    # Storage of global variables.
-    version_number = "0.1"
-    myEtiquette = Etiquette('PeepLaTeX',
-                            version_number,
-                            'https://github.com/yongrenjie',
-                            'yongrenjie@gmail.com')
+    ### Global variables used to store the state of the programme.
     # List of dictionaries, each containing a single article.
     articleList = []
     # pathlib.Path object pointing to the current database.
     currentPath = None
-    # Number of changes made to articleList that haven't been autosaved.
-    changes = 0
+    # Changes made to articleList that haven't been autosaved.
+    changes = []
+    # Default method of sorting, to be performed when loading a file.
+    #  This can be overridden during programme usage, so can also act
+    #  as the "current" method of sorting".
+    sortMode = "yja"     # Year, journal, author
+    sortReverse = False  # Oldest to newest
+    sortKey = {"yja": (lambda a: (a["year"], a["journalLong"],
+                                    a["authors"][0]["family"])),
+               "timeOpened": itemgetter("timeOpened"),
+               "timeAdded": itemgetter("timeAdded"),
+               }
+
+    # History which allows undo.
+    maxHistory = 5
+    articleListHistory = deque(maxlen=maxHistory)
+    cmdHistory = deque(maxlen=maxHistory)
+
     # Debugging mode on/off
     debug = True
+    # Programme information
+    versionNo = "0.2"
+    myEtiquette = Etiquette('PeepLaTeX',
+                            versionNo,
+                            'https://github.com/yongrenjie',
+                            'yongrenjie@gmail.com')
     # Maximum number of backups to keep
     maxBackups = 5
     # Time interval for autosave (seconds). Note that this doesn't actually
@@ -49,17 +69,23 @@ class _g():
             darkmode = False
 
     # Colours for various stuff. Names should be self-explanatory.
-    ptPink = "#f589d1" if darkmode else "#8629ab"
+    def a(col):
+        return "\033[38;5;{}m".format(col)
+    ptPink  = "#f589d1" if darkmode else "#8629ab"
     ptGreen = "#17cf48" if darkmode else "#2a731f"
-    ptBlue = "#45c6ed" if darkmode else "#3344de"
-    ansiErrorRed = "\033[38;5;196m"
-    ansiErrorText = "\033[38;5;210m" if darkmode else "\033[38;5;88m"
-    ansiDiffRed = "\033[38;5;202m" if darkmode else "\033[38;5;124m"
-    ansiDiffGreen = "\033[38;5;50m" if darkmode else "\033[38;5;30m"
-    ansiDebugGrey = "\033[38;5;240m" if darkmode else "\033[38;5;246m"
+    ptBlue  = "#45c6ed" if darkmode else "#3344de"
+    ansiIntroBlue  = a(81)  if darkmode else a(19)
+    ansiErrorRed   = a(196)
+    ansiErrorText  = a(210) if darkmode else a(88)
+    ansiDiffRed    = a(202) if darkmode else a(124)
+    ansiDiffGreen  = a(50)  if darkmode else a(3)
+    ansiDebugGrey  = a(240) if darkmode else a(246)
+    ansiHelpYellow = a(220) if darkmode else a(88)
+    ansiBold = "\033[1m"
     ansiReset = "\033[0m"
+
     # System preferred encoding. Probably UTF-8.
-    gpe = gpe()
+    gpe = getpreferredencoding()
     # Crossref object.
     works = Works(etiquette=myEtiquette)
 
@@ -120,10 +146,41 @@ class _g():
     }
 
 
-class _exitCode(Enum):
+class _ret(Enum):
     SUCCESS = 0
     FAILURE = 1
     pass
+
+
+def _helpdeco(fn):
+    """
+    Decorator which makes the function take a parameter 'help'. If this is
+    True, then the function prints its docstring and exits immediately.
+    """
+    @wraps(fn)
+    def helpfulFn(*args, help=False, **kwargs):
+        if help is True:
+            print("{}{}{}".format(_g.ansiHelpYellow,
+                                  fn.__doc__.split("\n    **")[0],
+                                  _g.ansiReset))
+            return _ret.SUCCESS
+        else:
+            return fn(*args, **kwargs)
+    return helpfulFn
+
+
+def _asynchelpdeco(fn):
+    """_helpdeco, just for async coroutines."""
+    @wraps(fn)
+    async def helpfulAsyncFn(*args, help=False, **kwargs):
+        if help is True:
+            print("{}{}{}".format(_g.ansiHelpYellow,
+                                  fn.__doc__.split("\n    **")[0],
+                                  _g.ansiReset))
+            return _ret.SUCCESS
+        else:
+            return await fn(*args, **kwargs)
+    return helpfulAsyncFn
 
 
 def _timedeco(fn):
@@ -131,13 +188,13 @@ def _timedeco(fn):
     Decorator which prints time elapsed for a function call.
     """
     @wraps(fn)
-    def timer(*args, **kwargs):
+    def timedFn(*args, **kwargs):
         now = time()
         rval = fn(*args, **kwargs)
         _debug("{}: time elapsed: {:.3f} ms".format(fn.__name__,
                                                    (time() - now) * 1000))
         return rval
-    return timer
+    return timedFn
 
 
 def _asynctimedeco(fn):
@@ -164,7 +221,7 @@ def _error(msg):
     """
     print("{}error:{} {}{}{}".format(_g.ansiErrorRed, _g.ansiReset,
                                      _g.ansiErrorText, msg, _g.ansiReset))
-    return _exitCode.FAILURE
+    return _ret.FAILURE
 
 
 def _debug(msg):
@@ -173,7 +230,9 @@ def _debug(msg):
 
 
 def _p(n, singular='', plural='s'):
-    """Tells us whether to use plural or singular."""
+    """
+    Tells us whether to use plural or singular.
+    """
     try:  # if n is some iterable
         n = len(n)
     except TypeError:
@@ -182,7 +241,8 @@ def _p(n, singular='', plural='s'):
 
 
 async def _copy(s):
-    """Copy s to the clipboard.
+    """
+    Copy s to the clipboard.
 
     Doesn't pretend to be cross-platform. Only for macOS.
     Linux (specifically WSL) support to be added in future.
@@ -191,7 +251,42 @@ async def _copy(s):
     if sys.platform == "darwin":
         proc = await asyncio.create_subprocess_exec("pbcopy",
                                                     stdin=asyncio.subprocess.PIPE)
-        await proc.communicate(input=s.encode(gpe()))
-        return
+        await proc.communicate(input=s.encode(_g.gpe))
+        return _ret.SUCCESS
     else:
         return _error("_copy: unsupported OS, not copied to clipboard")
+
+
+def _saveHist(cmd, args):
+    """
+    Saves the articleList just before applying the command cmd.
+    """
+    cmd = cmd + " " + " ".join(args)
+    if _g.debug is True:
+        _debug("saving history before command {}".format(cmd))
+    _g.cmdHistory.append(cmd)
+    _g.articleListHistory.append(deepcopy(_g.articleList))
+
+
+def _clearHist():
+    """
+    Wipes the history. To be done just before loading a new file.
+    If we don't do that, weesa may be in big doo doo.
+    """
+    _g.cmdHistory.clear()
+    _g.articleListHistory.clear()
+
+
+@_helpdeco
+def _undo():
+    """
+    Tries to rewind history.
+    """
+    try:
+        _g.articleList = _g.articleListHistory.pop()
+        _g.changes += ["undo"]
+        print("undid command: {}".format(_g.cmdHistory.pop()))
+    except IndexError:
+        return _error("undo: no more history")
+    else:
+        return _ret.SUCCESS

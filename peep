@@ -4,36 +4,52 @@ import os
 import sys
 import subprocess
 import asyncio
+import argparse
 from pathlib import Path
 from copy import deepcopy
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 from tempfile import NamedTemporaryFile
+from operator import attrgetter, itemgetter
 
 import yaml
 import prompt_toolkit as pt
 
 import refMgmt
 import listFmt
-from constants import _g, _p, _exitCode, _timedeco, _error, _debug, _copy
+from _shared import (_g, _p, _ret, _helpdeco, _asynchelpdeco, _timedeco,
+                     _error, _debug, _copy,
+                     _undo, _saveHist, _clearHist)
 
 
 class peepPrompt():
     style = pt.styles.Style.from_dict({
         "prompt": "{} italic".format(_g.ptPink),
-        ""      : "{}".format(_g.ptGreen),
+        ""      : _g.ptGreen,
     })
     message = [("class:prompt", "peep > ")]
     commentSymbol = '#'
     session = pt.PromptSession()
 
-    intro = "/------------------------------------------------------------\\" "\n"\
-           f"| PeepLaTeX v{_g.version_number:<23}                         |"  "\n"\
-            "| Common commands:                                           |"  "\n"\
-            "| ----------------                                           |"  "\n"\
-            "| r - read database     l - list papers     o - open a paper |"  "\n"\
-            "| c - get a citation    h - help            q - quit         |"  "\n"\
-            "\\------------------------------------------------------------/"
+    intro = "\n" + "{}".format(_g.ansiHelpYellow) + \
+             "/----------------------------------------------------------------\\" + "\n" + \
+             "| {}PeepLaTeX v{:<13s}{}{}                                       |".format(_g.ansiBold,
+                                                                                         _g.versionNo,
+                                                                                         _g.ansiReset,
+                                                                                         _g.ansiHelpYellow) + "\n" + \
+             "| Common commands:                                               |" + "\n" + \
+             "| ----------------                                               |" + "\n" + \
+             "| r[ead] a file         w[rite] to a file                        |" + "\n" + \
+             "|                                                                |" + "\n" + \
+             "| l[ist] all articles   so[rt] articles     s[earch] in articles |" + "\n" + \
+             "|                                                                |" + "\n" + \
+             "| a[dd] a DOI           d[elete] a ref      e[dit] a ref         |" + "\n" + \
+             "| c[ite] a ref          u[pdate] a ref                           |" + "\n" + \
+             "|                                                                |" + "\n" + \
+             "| ap - add a PDF        dp - delete a PDF   (NOT IMPLEMENTED)    |" + "\n" + \
+             "|                                                                |" + "\n" + \
+             "| un[do]                h <cmd> - help      q[uit]               |" + "\n" + \
+             "\\----------------------------------------------------------------/" + "{}".format(_g.ansiReset) + "\n"
 
     async def loop(self):
         print(self.intro)
@@ -57,6 +73,23 @@ class peepPrompt():
                         cmd, args = line[0], line[1:]
                     cmd = cmd.lstrip(":")  # I have typed in :q more than once
 
+                    # Look for help command. If so, remove help and delegate to the
+                    # actual command which will print its own docstring.
+                    help = False
+                    if cmd in ["h", "help"]:
+                        if args == []:   # general help wanted
+                            print(self.intro)
+                            continue
+                        else:
+                            help = True
+                            cmd = args[0]
+                            args = args[1:]
+                            if cmd in ["q", "quit", "zzzpeep"]:
+                                print("{}{}{}".format(_g.ansiHelpYellow,
+                                                      "\n    Quits the programme.\n",
+                                                      _g.ansiReset))
+                                continue
+
                     # If any numbers are in the cmd, separate the bit with 
                     #  a number and prepend it to args. This allows us to do
                     #  things like "o1" instead of "o 1". Yes I'm lazy.
@@ -68,25 +101,51 @@ class peepPrompt():
                     if cmd in ["q", "quit", "zzzpeep"]:         # QUIT
                         break
                     elif cmd in ["c", "cite"]:                  # CITE
-                        asyncio.create_task(cite(args))
+                        asyncio.create_task(cite(args, help=help))
                     elif cmd in ["o", "open"]:                  # OPEN
-                        openRef(args)
+                        openRef(args, help=help)
                     elif cmd in ["w", "write"]:                 # WRITE
-                        write(args)
+                        write(args, help=help)
                     elif cmd in ["l", "ls", "list"]:            # LIST
-                        listArticles()
+                        listArticles(args, help=help)
                     elif cmd in ["r", "read"]:                  # READ
-                        read(args)
+                        read(args, help=help)
                     elif cmd in ["e", "edit"]:                  # EDIT
-                        editRef(args)
+                        if help is False:
+                            _saveHist(cmd, args)
+                        editRef(args, help=help)
                     elif cmd in ["a", "add"]:                   # ADD
-                        addRef(args)
+                        if help is False:
+                            _saveHist(cmd, args)
+                        await addRef(args, help=help)
                     elif cmd in ["d", "del", "delete"]:         # DELETE
-                        await deleteRef(args)
+                        if help is False:
+                            _saveHist(cmd, args)
+                        await deleteRef(args, help=help)
                     elif cmd in ["u", "up", "update"]:          # UPDATE
-                        await updateRef(args)
-                    elif cmd in ["h", "help"]:                  # HELP
-                        print(self.intro)
+                        if help is False:
+                            _saveHist(cmd, args)
+                        await updateRef(args, help=help)
+                    elif cmd in ["s", "se", "search"]:          # SEACH
+                        _error("it's not been implemented yet...")
+                    elif cmd in ["so", "sort"]:                 # SORT
+                        if help is False:
+                            _saveHist(cmd, args)
+                        sortArticleList(args, help=help)
+                    elif cmd in ["un", "undo"]:                 # UNDO
+                        _undo(help=help)
+                    ## This prints the global article list in order of time added,
+                    ## but doesn't actually modify it.
+                    # elif cmd in ["quack"]:
+                    #     listArticles(None, *sortCopyArticles(mode="timeAdded"))
+                    elif cmd in ["exec"] and _g.debug:          # EXEC for debugging
+                        import traceback
+                        # Execute arbitrary code. Useful for inspecting internal state.
+                        try:
+                            exec("_res =  " + " ".join(args), globals(), locals())
+                            print(locals()["_res"])
+                        except Exception as e:
+                            traceback.print_exc()
                     elif cmd in ["pee"]:                        # PEE
                         print("zzzpee...")
                     elif cmd in ["peep", "PEEP"]:               # PEEP
@@ -111,18 +170,33 @@ class peepPrompt():
 #### and dispatch to specialised methods. Some are smart enough to be called
 #### from outside the prompt, too.
 
+@_helpdeco
 @_timedeco
 def read(args=Path.cwd(), silent=False):
     """
-    Reads a YAML file into the list of dictionaries _g.articleList.
+    Usage: r[ead] [path_to_file]
 
-    Accepts a string, pathlib.Path object, or a list/tuple containing
-     a string or Path object as the first item.
+    Reads a list of articles stored as a YAML file. If the argument is a
+    directory, then attempts to read a file named db.yaml in the directory.
 
-    If the argument is a directory, then read() attempts to read from the
-     file db.yaml inside that directory.
+    This function is automatically called when PeepLaTeX first starts, using
+    either the argument passed on the command-line, or with the user's current
+    working directory.
 
-    Defaults to Path.cwd().
+    When a new database is read in, the references will be sorted by year. The
+    undo history will also be cleared.
+
+    ** Function details **
+    Reads from a YAML file. Sets the global variables _g.articleList and
+    _g.currentPath if successful.
+
+    Arguments:
+        args:   String, pathlib.Path object, or a list/tuple containing a string
+                or Path object as the first item.
+        silent: True to suppress output. Does not suppress errors.
+
+    Returns:
+        Return codes as defined in _ret.
     """
     # Argument parsing
     if isinstance(args, (list, tuple)):
@@ -134,15 +208,19 @@ def read(args=Path.cwd(), silent=False):
         p = Path(args)
     except TypeError:   # not castable
         return _error("read: invalid argument '{}'".format(args))
+
     # If it points to an existing directory, load db.yaml from there
     if p.is_dir() and p.exists():
         p = p / "db.yaml"
     # Expand tildes and relative paths
     fname = p.expanduser().resolve()
+    # If it is the same file, don't bother loading it
+    if fname == _g.currentPath:
+        return _error("read: file {} already loaded".format(fname))
 
     # If there is an article list loaded, save it first!
-    if _g.articleList and _g.currentPath and _g.changes > 0:
-        # list was loaded from somewhere
+    if _g.articleList and _g.currentPath and _g.changes != []:
+        _g.changes = []
         write()
     elif _g.articleList and not _g.currentPath:
         # list was created from scratch
@@ -159,6 +237,7 @@ def read(args=Path.cwd(), silent=False):
                 print("read: reading library {}... ".format(fname))
             try:
                 _g.articleList = list(yaml.safe_load_all(fp))
+                _clearHist()  # clear the history!
             except yaml.YAMLError:
                 return _error("read: invalid YAML file {}".format(fname))
             if not silent:
@@ -171,18 +250,32 @@ def read(args=Path.cwd(), silent=False):
         if fname != _g.currentPath:
             _g.currentPath = fname
             backup()
+        # Then sort the list in place (which will trigger autosave)
+        sortArticleList()
 
-    return _exitCode.SUCCESS
+    return _ret.SUCCESS
 
 
+@_helpdeco
 @_timedeco
 def write(args=None, silent=False):
     """
-    Writes the list of dictionaries _g.articleList to a YAML file.
+    Usage: w[rite] [path_to_file]
 
-    Accepts a string, pathlib.Path object, or a list/tuple containing
-     a string or Path object as the first item.
-    Defaults to _g.currentPath.
+    Writes the current database to a YAML file. If the argument is a directory,
+    then writes to the file db.yaml in that directory. If the argument is not
+    provided, then writes to the path of the currently loaded database.
+
+    ** Function details **
+    Writes to a YAML file.
+
+    Arguments:
+        args:   String, pathlib.Path object, or a list/tuple containing a string
+                or Path object as the first item.
+        silent: True to suppress output. Does not suppress errors.
+
+    Returns:
+        Return codes as defined in _ret.
     """
     ### Argument parsing
     # Convert to a pathlib.Path object regardless of the input
@@ -190,9 +283,15 @@ def write(args=None, silent=False):
         try:
             args = args[0]
         except IndexError:   # empty list or tuple
-            args = _g.currentPath
+            if _g.currentPath is not None:
+                args = _g.currentPath
+            else:
+                return _error("write: no filename specified")
     if args is None:
-        args = _g.currentPath
+        if _g.currentPath is not None:
+            args = _g.currentPath
+        else:
+            return _error("write: no filename specified")
     try:
         fname = Path(args)
     except TypeError:  # not castable
@@ -208,62 +307,155 @@ def write(args=None, silent=False):
             if not silent:
                 print("write: writing current library to {}... ".format(fname))
             yaml.dump_all(_g.articleList, fp)
+            _g.changes = []
             if not silent:
                 print("write: done")
     except FileNotFoundError:
         return _error("write: directory {} does not exist".format(fname.parent))
 
-    return _exitCode.SUCCESS
+    return _ret.SUCCESS
 
 
+@_helpdeco
 @_timedeco
-def listArticles(articles=None, type="long"):
+def listArticles(args=None, articles=None, refnos=None, type="long"):
     """
-    Print prettified output of a given list of articles. Defaults to the entire
-     list of articles _g.articleList.
+    Usage: l[ist] [refnos...]
 
-    Accepts an additional parameter to control how many articles are printed.
-     type="long": prints every article.
-     type="short": prints first 2 and last 2.
+    Lists articles in the currently loaded database. If no further reference
+    numbers are specified, lists all articles.
+
+    Reference numbers may be specified as a comma- or space-separated series of
+    integers or ranges (low-high, inclusive). For example, 'l 41-43' lists
+    articles 41 through 43. 'l 4, 9, 21-24' lists articles 4, 9, and 21 through
+    24.
+
+    ** Function details **
+    Prints a list of articles. This function essentially has two interfaces.
+
+    The first interface is via the command-line, where 'args' is passed as a
+    list of strings. This is parsed to give a list of reference numbers which
+    should be printed.
+
+    The second, more flexible, interface is for printing specific lists of
+    articles, for example those which have been filtered by a search keyword.
+    To use this, pass the lists 'articles' and 'refnos' as arguments. This is
+    (usually) more suitable for use from other subroutines. An additional
+    parameter 'type' can be used to control the verbosity.
+
+    If one simply wants to print every article, then this can be most easily
+    invoked as listArticles().
+
+    Arguments:
+        args:     List of command-line arguments. Passing this manually is not
+                  recommended; instead, use the articles and refnos parameters.
+        articles: List of articles to be printed. Defaults to _g.articleList.
+        refnos:   List of refnos to be printed. Defaults to
+                  range(1, len(articles) + 1).
+                  The order of the two lists passed, articles and refnos, is
+                  always preserved (using zip()).
+        type:     'long' - prints every article.
+                  'short' - prints the first two and last two articles.
+
+    Returns:
+        Return codes as defined in _ret.
     """
-    # Make a copy first...
-    l = deepcopy(articles) if articles is not None else deepcopy(_g.articleList)
-    # Exit if an empty list is provided
-    if l == []:
-        print("no articles found")
-        return
+
+    # Interface 1: via command line
+    if articles is None and refnos is None:
+        arts = deepcopy(_g.articleList)
+        l = len(arts)
+        # If short mode is requested but the list is too short, go back to long mode
+        if type == "short" and l <= 4:
+            type == "long"
+        # Exit if an empty list is provided
+        if arts == []:
+            return _error("listArticles: no articles found")
+
+        # Parse reference numbers.
+        # If it's short, then we don't need to do anything beyond picking those four
+        if type == "short":
+            refnos = [1, 2, l - 1, l]
+        if type == "long":
+            # By default print all references, otherwise fetch refnos.
+            if args == []:
+                refnos = range(1, l + 1)
+            else:
+                refnos = refMgmt.parseRefno(",".join(args))
+            # Check the returned values
+            if refnos is _ret.FAILURE or refnos == [] or any(r > l for r in refnos):
+                return _error("listArticles: invalid "
+                              "argument{} '{}' given".format(_p(args), " ".join(args)))
+        # Pick out the desired references.
+        # We have to do it at this stage before we calculate the field widths.
+        arts = [arts[r - 1] for r in refnos]
+
+    # Interface 2: via arguments 'articles' and 'refnos'
+    else:
+        arts = deepcopy(articles)
+        l = len(arts)
+        refnos = list(refnos)
+        if l != len(refnos):
+            return _error("listArticles: articles and refnos "
+                          "have different lengths ({} and {})".format(l, len(refnos)))
 
     # Get field sizes
     layout_str = "{0:<{1}}{2:{3}}{4:<{5}}{6:{7}}{8:{9}}"
-    fss = listFmt.getFS(l)
+    fss = listFmt.getFS(arts, refnos)
     number_fs, author_fs, year_fs, journal_fs, title_fs = fss
 
     # Print header
     listFmt.printListHead(layout_str, fss)
 
     # Print all article contents
-    if len(l) <= 4 or type == "long":
-        for i, a in enumerate(l, start=1):
-            listFmt.listOneArticle(i, a, layout_str, fss)
-        return _exitCode.SUCCESS
+    if type == "long":
+        for r, a in zip(refnos, arts):
+            listFmt.listOneArticle(r, a, layout_str, fss)
+        return _ret.SUCCESS
     elif type == "short":
-        n = len(l)
-        listFmt.listOneArticle(1, l[0], layout_str, fss)
-        listFmt.listOneArticle(2, l[1], layout_str, fss)
+        # refnos and arts have already been set correctly, so we can index from 0 to 3
+        listFmt.listOneArticle(refnos[0], arts[0], layout_str, fss)
+        listFmt.listOneArticle(refnos[1], arts[1], layout_str, fss)
         listFmt.printDots(layout_str, fss)
-        listFmt.listOneArticle(n - 1, l[n - 2], layout_str, fss)
-        listFmt.listOneArticle(n, l[n - 1], layout_str, fss)
-        return _exitCode.SUCCESS
+        listFmt.listOneArticle(refnos[2], arts[2], layout_str, fss)
+        listFmt.listOneArticle(refnos[3], arts[3], layout_str, fss)
+        return _ret.SUCCESS
     else:
         return _error("listArticles: invalid type '{}'".format(type))
 
 
+@_helpdeco
 @_timedeco
 def openRef(args):
     """
-    Opens one or more references, in the form of PDF, SI, or Web.
+    Usage: o[pen] refnos[...] [formats...]
 
-    Takes a list of arguments.
+    Opens the original text of one or more references.
+
+    At least one refno must be specified. For more details about the format in
+    which refnos are specified, type 'h list'.
+
+    More than one format can be provided, separated by commas, spaces, or even
+    by nothing at all. Available formats are:
+
+        'pdf' or 'p' (default) - The full text of the article (as a PDF).
+        'si'  or 's'           - The SI of the article (as a PDF).
+        'web' or 'w'           - The website.
+
+    If the PDFs are not present in the relevant folder, they can be added using
+    the 'ap' command.
+
+    ** Function details **
+    This function doesn't have bells or whistles. It just opens references.
+    This should only be invoked from the command-line. In the future we might
+    consider letting it take other parameters for manual specification of
+    refnos or formats, but for now, that's what this is.
+
+    Arguments:
+        args: List of command-line arguments.
+
+    Returns:
+        Return codes as defined in _ret.
     """
     if _g.articleList == []:
         return _error("openRef: no articles have been loaded")
@@ -277,8 +469,8 @@ def openRef(args):
 
     # Check the returned values
     ls = len(_g.articleList)
-    if refnos is None or refnos == [] or any(r > ls for r in refnos) \
-            or formats is None or any(f not in abbrevs for f in formats):
+    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos) \
+            or formats is _ret.FAILURE or any(f not in abbrevs for f in formats):
         return _error("openRef: invalid argument{} '{}' given".format(_p(args),
                                                                       " ".join(args)))
     # Default format
@@ -290,17 +482,55 @@ def openRef(args):
     # open(1) is really fast, so it doesn't seem like this could be a problem unless we
     #  are opening tons and tons of references. But if it does then we may want to use
     #  some concurrency methods.
+    yes, no = 0, 0
     for drf in drfs:
-        refMgmt.openDOIType(*drf, _g.currentPath)
-    return _exitCode.SUCCESS
+        c = refMgmt.openDOIType(*drf, _g.currentPath)
+        if c == _ret.SUCCESS:
+            _g.articleList[drf[1] - 1]["timeOpened"] = datetime.now(timezone.utc)
+            yes += 1
+        else:
+            no += 1
+    print("openRef: {} references opened, {} failed".format(yes, no))
+    _g.changes += ["open"] * yes
+    return _ret.SUCCESS
 
 
+@_asynchelpdeco
 @_timedeco
 async def cite(args):
-    """Prints citation for one or more references in the form of DOI, BibLaTeX, or
-    Markdown (e.g. for use on Stack Exchange).
+    """
+    Usage: c[ite] refnos[...] [formats...]
 
-    Also copies the citation text to system clipboard.
+    Provides a citation for one or more references. Also copies the citation
+    text to the clipboard.
+
+    At least one refno must be specified. For more details about the format in
+    which refnos are specified, type 'h list'.
+
+    More than one format can be provided, separated by commas, spaces, or even
+    by nothing at all. Available formats are:
+
+        'bib' or 'b' (default) - BibLaTeX. The article identifier is
+                                 constructed by concatenating the first author,
+                                 year, and journal.
+        'markdown' or 'm'      - Markdown form of 'short' ACS style citation.
+        'Markdown' or 'M'      - Markdown form of 'long' ACS style citation.
+        'doi' or 'd'           - Just the DOI.
+
+    ** Function details **
+    This function doesn't have bells or whistles. It just cites references.
+    This should only be invoked from the command-line. In the future we might
+    consider letting it take other parameters for manual specification of
+    refnos or formats, but for now, that's what this is.
+
+    Copying to the clipboard is implemented in an asynchronous manner, which
+    is nice.
+
+    Arguments:
+        args: List of command-line arguments.
+
+    Returns:
+        Return codes as defined in _ret.
     """
     if _g.articleList == []:
         return _error("cite: no articles have been loaded")
@@ -309,14 +539,14 @@ async def cite(args):
     # Process args
     abbrevs = {"d": "doi",
                "b": "bib",
-               "m": "md",
-               "M": "MD"}
+               "m": "markdown",
+               "M": "Markdown"}
     refnos, formats = refMgmt.parseRefnoFormat(args, abbrevs=abbrevs)
 
     # Check the returned values
     ls = len(_g.articleList)
-    if refnos is None or refnos == [] or any(r > ls for r in refnos) \
-            or formats is None or any(f not in abbrevs for f in formats):
+    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos) \
+            or formats is _ret.FAILURE or any(f not in abbrevs for f in formats):
         return _error("cite: invalid argument{} '{}' given".format(_p(args),
                                                                    " ".join(args)))
     # Default format = biblatex
@@ -332,12 +562,31 @@ async def cite(args):
         if len(refnos) > 1 or len(formats) > 1:
             sep = "\n\n" if af[1] in "bMm" else "\n"
     print(citation)
-    await _copy(citation)
+    rval = await _copy(citation)
+    return rval
 
 
+@_helpdeco
 @_timedeco
 def editRef(args):
-    """Edits one or more references using vim."""
+    """
+    Usage: e[dit] refnos[...]
+
+    Directly edit the entries for one or more citations, using vim. To cancel
+    any changes made, exit vim using :cq.
+
+    At least one refno must be specified. For more details about the format in
+    which refnos are specified, type 'h list'.
+
+    ** Function details **
+    This is a function which is only meant to be invoked from the command-line.
+
+    Arguments:
+        args: List of command-line arguments.
+
+    Returns:
+        Return codes as defined in _ret.
+    """
     if _g.articleList == []:
         return _error("editRef: no articles have been loaded")
     if args == []:
@@ -347,7 +596,7 @@ def editRef(args):
     refnos = refMgmt.parseRefno(",".join(args))
     # Check the returned values
     ls = len(_g.articleList)
-    if refnos is None or refnos == [] or any(r > ls for r in refnos):
+    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
         return _error("editRef: invalid argument{} '{}' given".format(_p(args),
                                                                       " ".join(args)))
 
@@ -377,13 +626,33 @@ def editRef(args):
             for (a, r) in zip(editedArticles, refnos):
                 if _g.articleList[r - 1] != a:
                     _g.articleList[r - 1] = deepcopy(a)
-                    _g.changes += 1
-        return _exitCode.SUCCESS
+                    _g.changes += ["edit"]
+        return _ret.SUCCESS
 
 
+@_asynchelpdeco
 @_timedeco
-def addRef(args):
-    """Adds one or more references (passed as DOIs) to the article list."""
+async def addRef(args):
+    """
+    Usage: a[dd] DOI[...]
+
+    Adds one or more DOIs to the reference list. Separate DOIs must be
+    separated by spaces. After the reference is added, the list is sorted
+    again using the currently active sorting method.
+
+    Uses the Crossref API to obtain metadata about an article. Unfortunately,
+    this isn't smart enough (yet) to get the PDF directly from the Internet.
+
+    ** Function details **
+    This should only be invoked via the command-line.
+
+    Arguments:
+        args: List of command-line arguments.
+
+    Returns:
+        Return codes as defined in _ret. However, here it only really ever
+        returns _ret.SUCCESS.
+    """
     if args == []:
         return _error("addRef: no DOIs provided")
     yes = 0
@@ -400,25 +669,172 @@ def addRef(args):
                 break
         if found:
             continue
+
         # Otherwise, proceed to get the data
         a = refMgmt.getMetadataFromDOI(doi)
-        if a is None:
+        if a is _ret.FAILURE:
             _error("addRef: invalid DOI '{}'".format(doi))
             no += 1
             continue
         else:
-            print("addRef: added DOI '{}'".format(doi))
-            print(a)
-            yes += 1
-            _g.articleList.append(a)
+            a["timeAdded"] = datetime.now(timezone.utc)
+            a["timeOpened"] = datetime.now(timezone.utc)
+            # Prompt user whether to accept the article
+            refMgmt.diffArticles({}, a)
+            msg = "addRef: accept new data (y/n)? ".format()
+            style = pt.styles.Style.from_dict({"prompt": _g.ptBlue, "": _g.ptGreen})
+            try:
+                ans = await pt.PromptSession().prompt_async(msg, style=style)
+            except (EOFError, KeyboardInterrupt):
+                ans = "no"
+            if ans.strip().lower() in ["", "y", "yes"]:
+                _g.articleList.append(a)
+                print("addRef: added DOI '{}'".format(doi))
+                yes += 1
+            else:
+                print("addRef: DOI {} not added".format(doi))
+                no += 1
     print("addRef: {} DOIs added, {} failed".format(yes, no))
-    _g.changes += yes
+    _g.changes += ["add"] * yes
+    sortArticleList()
+    return _ret.SUCCESS
+
+
+@_helpdeco
+@_timedeco
+def sortArticleList(args=None):
+    """
+    Usage: so[rt] [mode]
+
+    Sorts the currently loaded database. The key by which to sort can be
+    passed as the only option. The available modes are:
+
+        "year", "yja", or "y"     - first by year, then journal name, then
+                                    first author surname
+        "opened", "open", or "o"  - by the time last opened
+        "added", "add", or "a"    - by the time added to the database
+
+    If no key is used, then the current sorting mode is used. When loading
+    an article, this will always be "year", but when calling 'so <key>', the
+    requested key will be stored as the current sorting mode.
+
+    By default, articles are sorted from oldest to newest, such that the most
+    recent articles always appear at the bottom of the list (i.e. easiest to
+    see). Reverse sort can be performed by capitalising the first letter of
+    the key passed as a command-line argument, e.g. 'so Y' to sort from newest
+    to oldest.
+
+    ** Function details **
+    This sorts the global list _g.articleList in-place. If no argument is
+    passed, it uses _g.sortMode and _g.sortReverse as the sort arguments.
+
+    If you want to sort a copy of a list without modifying it, you shoulduse
+    sortCopyArticles().
+
+    Arguments:
+        args: list of command-line arguments
+
+    Returns:
+        Return codes as defined in _ret.
+    """
+    # Argument processing
+    if args is None or args[0] == "":
+        mode, reverse = _g.sortMode, _g.sortReverse
+    else:
+        reverse = True if args[0][0].isupper() else False
+        if args[0] in ["y", "yja", "year"]:  # default
+            mode = "yja"
+        elif args[0] in ["o", "op", "ope", "open", "opened", "timeopened"]:
+            mode = "timeOpened"
+        elif args[0] in ["a", "ad", "add", "added", "timeadded"]:
+            mode = "timeAdded"
+        else:
+            return _error("sortArticleList: invalid sort mode '{}' provided".format(args[0]))
+        # set the current sort mode
+        _g.sortMode, _g.sortReverse = mode, reverse
+    if _g.articleList == []:
+        return _error("sortArticleList: no articles have been loaded")
+
+    # Sort in place
+    _g.articleList.sort(key=_g.sortKey[mode], reverse=reverse)
+    # Trigger autosave
+    _g.changes += ["sort"]
+    return _ret.SUCCESS
 
 
 @_timedeco
+def sortCopyArticles(articles=None, refnos=None, mode=None, reverse=None):
+    """
+    ** Function details **
+
+    Sorts a list of articles and refnos by the given mode. This function makes
+    a copy of the lists, so the original lists are not mutated. This is useful
+    for generating input to listArticles(), which zips the two lists up before
+    printing them.
+
+    Arguments:
+        articles: list of articles to be sorted. Defaults to _g.articleList
+                  (but this makes a copy, so it doesn't get modified).
+        refnos  : reference numbers corresponding to the articles. Defaults to
+                  range(1, len(articles) + 1).
+        mode    : mode to sort by. The allowed values are the keys of
+                  _g.sortKey, which right now are "yja", "timeOpened", and
+                  "timeAdded". Defaults to _g.sortMode.
+        reverse : whether to sort in ascending order (True) or descending
+                  (False). Defaults to _g.sortReverse.
+
+    Returns:
+        (articles, refnos): Sorted articles and refnos.
+    """
+    # Argument processing
+    if articles is None:
+        articles = _g.articleList
+    if refnos is None:
+        refnos = range(1, len(articles) + 1)
+    if len(articles) != len(refnos):
+        return _error("sortCopyArticles: articles and refnos "
+                      "have different lengths ({} and {})".format(len(articles),
+                                                                  len(refnos)))
+    if mode is None:
+        mode = _g.sortMode
+    try:
+        # Because we're sorting tuples, we need to apply _g.sortKey[mode] to
+        # the first element of the tuple, hence the added complexity.
+        key = (lambda t: _g.sortKey[mode](t[0]))
+    except KeyError:
+        return _error("sortCopyArticles: invalid mode '{}' provided".format(mode))
+    if reverse is None:
+        reverse = _g.sortReverse
+
+    # Copy and sort the list
+    arts = deepcopy(articles)
+    refnos = deepcopy(refnos)  # this is probably overkill, but might as well
+    arts, refnos = zip(*sorted(zip(arts, refnos), key=key, reverse=reverse))
+    return (arts, refnos)
+
+
+@_asynchelpdeco
+@_timedeco
 async def updateRef(args):
-    """Update one or more references using the Crossref API.
-    For each reference, prompts the user as to whether they want to update."""
+    """
+    Usage: u[pdate] refnos[...]
+
+    Update one or more references using the Crossref API. If any differences in
+    the metadata are detected, then the user is prompted to accept or reject
+    the changes before applying them to the database.
+
+    At least one refno must be specified. For more details about the format in
+    which refnos are specified, type 'h list'.
+
+    ** Function details **
+    This is only meant to be invoked from the command-line.
+
+    Arguments:
+        args: List of command-line options.
+
+    Returns:
+        Return codes as defined in _ret.
+    """
     if _g.articleList == []:
         return _error("updateRef: no articles have been loaded")
     if args == []:
@@ -428,7 +844,7 @@ async def updateRef(args):
     refnos = refMgmt.parseRefno(",".join(args))
     # Check the returned values
     ls = len(_g.articleList)
-    if refnos is None or refnos == [] or any(r > ls for r in refnos):
+    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
         return _error("updateRef: invalid argument{} '{}' given".format(_p(args),
                                                                         " ".join(args)))
 
@@ -437,15 +853,19 @@ async def updateRef(args):
         yes = 0
         aold = _g.articleList[r - 1]
         anew = refMgmt.getMetadataFromDOI(aold["doi"])
-        if anew is None:
+        if anew is _ret.FAILURE:
             _error("updateRef: ref {} has an invalid DOI '{}'".format(r, aold["doi"]))
+        # copy over timeAdded, timeOpened data from old reference
+        anew["timeAdded"] = aold["timeAdded"]
+        anew["timeOpened"] = aold["timeOpened"]
+        # calculate and report differences
         ndiffs = refMgmt.diffArticles(aold, anew)
         if ndiffs == 0:
             print("updateRef: no new data for ref {} found on Crossref".format(r))
         else:
             # Must use a new PromptSession().prompt_async(), otherwise it gets messed up.
             msg = "updateRef: accept new data for ref {} (y/n)? ".format(r)
-            style = pt.styles.Style.from_dict({"prompt": "{}".format(_g.ptBlue)})
+            style = pt.styles.Style.from_dict({"prompt": _g.ptBlue, "": _g.ptGreen})
             try:
                 ans = await pt.PromptSession().prompt_async(msg, style=style)
             except (EOFError, KeyboardInterrupt):
@@ -457,13 +877,16 @@ async def updateRef(args):
             else:  # ok, it isn't really (y/n), it's (y/not y)
                 print("updateRef: rejected changes for ref {}".format(r))
     print("updateRef: {} article{} updated".format(yes, _p(yes)))
-    _g.changes += yes
-    return _exitCode.SUCCESS
+    _g.changes += ["update"] * yes
+    return _ret.SUCCESS
 
 
+@_asynchelpdeco
 @_timedeco
 async def deleteRef(args):
-    """Delete one or more references."""
+    """
+    Delete one or more references.
+    """
     if _g.articleList == []:
         return _error("deleteRef: no articles have been loaded")
     if args == []:
@@ -473,7 +896,7 @@ async def deleteRef(args):
     refnos = refMgmt.parseRefno(",".join(args))
     # Check the returned values
     ls = len(_g.articleList)
-    if refnos is None or refnos == [] or any(r > ls for r in refnos):
+    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
         return _error("deleteRef: invalid argument{} '{}' given".format(_p(args),
                                                                         " ".join(args)))
 
@@ -481,7 +904,7 @@ async def deleteRef(args):
     yes = 0
     msg = "deleteRef: really delete ref{} {} (y/n)? ".format(_p(refnos),
                                                              ", ".join(str(r) for r in refnos))
-    style = pt.styles.Style.from_dict({"prompt": "{}".format(_g.ptBlue)})
+    style = pt.styles.Style.from_dict({"prompt": _g.ptBlue, "": _g.ptGreen})
     try:
         ans = await pt.PromptSession().prompt_async(msg, style=style)
     except (EOFError, KeyboardInterrupt):
@@ -489,39 +912,49 @@ async def deleteRef(args):
     if ans.strip().lower() in ["", "y", "yes"]:
         # Must sort the list in descending order so that you don't get earlier
         #  deletions affecting later ones!!
-        for r in sorted(refnos, reverse=True):
+        refnos.sort(reverse=True)
+        for r in refnos:
             del _g.articleList[r - 1]
             yes += 1
         print("deleteRef: {} ref{} deleted".format(yes, _p(yes)))
-        _g.changes += yes
+        _g.changes += ["delete"] * yes
     else:
         print("deleteRef: no refs deleted")
-    return _exitCode.SUCCESS
+    return _ret.SUCCESS
 
 
 #############################################################################
 #### Coroutine to autosave current list at regular intervals.
 
 async def _autosave():
-    # Saves _g.articleList to _g.currentPath if changes have been made.
+    """
+    Checks every _g.autosaveInterval seconds for changes. If changes have been
+    made, saves _g.articleList to _g.currentPath.
+    """
     while True:
         try:
             await asyncio.sleep(_g.autosaveInterval)
             # Right now we only have one article list at a time, and
             #  changes just contains sentinel values.
-            if _g.articleList and _g.currentPath and _g.changes > 0:
-                _debug("autosave: found {} change".format(_g.changes, _p(_g.changes)))
+            l = len(_g.changes)
+            if _g.articleList and _g.currentPath and l != 0:
+                _debug("autosave: found {} change{}: {}".format(l,
+                                                                _p(l),
+                                                                " ".join(_g.changes)))
                 write(silent=True)
                 _debug("autosave complete")
-                _g.changes = 0
+                _g.changes = []
         except asyncio.CancelledError:
             break
+
 
 #############################################################################
 #### Backup function.
 
 def backup():
-    """Saves _g.articleList (if it isn't empty) to the backups folder."""
+    """
+    Saves _g.articleList (if it isn't empty) to the backups folder.
+    """
     if _g.maxBackups == 0:
         return
     if _g.articleList != [] and _g.currentPath is not None:
@@ -534,7 +967,7 @@ def backup():
         # This sorts in descending order of time created
         oldBackups = sorted([i for i in backupFolder.iterdir()
                              if i.name.startswith(dbName)],
-                            key=(lambda i: i.name),
+                            key=attrgetter('name'),
                             reverse=True)
         # Deletes anything after the _g.maxBackups - 1 newest ones
         #  (because after we back up, there will be _g.maxBackups
@@ -554,12 +987,27 @@ def backup():
                                                           _g.current))
 
 
-#### Main coroutine
+#############################################################################
+#### Main coroutine.
+
 async def main():
     # STARTUP CODE
-    # Try to load db.yaml from sys.argv[1], or current directory
-    # In principle this should be done with argparse
-    read(sys.argv[1:] if len(sys.argv) > 1 else [Path.cwd()])
+
+    # Parse sys.argv
+    parser = argparse.ArgumentParser()
+    parser.add_argument("db", help="YAML file to load upon startup",
+                        nargs='?')
+    # In the future we will change this to --debug, but I want all the
+    # debugging stuff while this is still in development.
+    parser.add_argument("--nodebug", help="Disable debugging output",
+                        action="store_false")
+    args = parser.parse_args()
+    infile = Path(args.db).resolve().expanduser() if args.db else Path.cwd()
+    if infile.exists() and infile.is_dir():
+        infile = infile / "db.yaml"
+    if infile.exists() and infile.is_file():
+        read(infile)
+    _g.debug = not args.nodebug
 
     # MAIN TASKS
     autosave = True

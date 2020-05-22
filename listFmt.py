@@ -1,10 +1,10 @@
 """
-This module provides tools for list printing.
+This module provides tools for printing of lists and article information.
 """
 
 import os
 
-from constants import _g
+from _shared import _g
 
 
 def printListHead(layout_str, fss):
@@ -86,33 +86,29 @@ def printDots(layout_str, fss):
     print()
 
 
-def getFS(l):
+def getFS(arts, refnos):
     """
     Calculates appropriate field sizes for the list output.
-
-    I tried caching this information in the article entry, but it makes virtually zero
-     difference to the runtime even for a library of 1400 articles, and it adds extra time
-     for reading/writing from/to disk (for reading in 1400 articles, the time taken increased
-     from ca 2.4 -> 2.7 seconds).
-    It's also a mess, because that means you'd have to remember to cache the information every
-     time you change the metadata.
-    Unfortunately you also can't use functools.lru_cache with this, because in general it will
-     expect a dictionary as the argument, which isn't hashable.
+    Doesn't process arts or refnos -- just does it quite literally.
     """
+    # I don't think we need to make a copy here.
+    # Calculate field widths
     spaces = 2
-    number_fs = len(str(len(l))) + spaces
-    author_fs = max(max(max(len(fmtAuthor(auth, style="display")) for auth in art["authors"]) for art in l),
+    number_fs = max(len(str(r)) for r in refnos) + spaces
+    author_fs = max(max(max(len(fmtAuthor(auth, style="display"))
+                            for auth in art["authors"])
+                        for art in arts),
                     len("Authors")
                     ) + spaces
     year_fs = 4 + spaces
-    journal_fs = max(max(len(fmtJournalShort(art["journalShort"])) for art in l),
-                     max(len(fmtVolInfo(art)) for art in l),
+    journal_fs = max(max(len(fmtJournalShort(art["journalShort"])) for art in arts),
+                     max(len(fmtVolInfo(art)) for art in arts),
                      len("Journal info")
                      ) + spaces
     # either use up the remaining space, or extend to the end of the longest title
     total_columns = os.get_terminal_size().columns
     title_fs = min(total_columns - number_fs - author_fs - year_fs - journal_fs,
-                   max(len(a["title"]) for a in l))
+                   max(len(a["title"]) for a in arts))
 
     return (number_fs, author_fs, year_fs, journal_fs, title_fs)
 
@@ -162,8 +158,11 @@ def fmtVolInfo(article):
 
 
 def fmtJournalShort(jname):
-    """Condenses the short journal name to something that's as readable as possible.
-    This mainly works by stripping periods, but there are also some useful acronyms."""
+    """
+    Condenses the short journal name to something that's as readable as possible.
+
+    This mainly works by stripping periods, but there are also some useful acronyms.
+    """
     jname = jname.replace(".", "")
     for long, short in _g.jNameAbbrevs.items():
         jname = jname.replace(long, short)

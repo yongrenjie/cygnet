@@ -1,4 +1,58 @@
 authors:
+- family: Schirhagl
+  given: Romana
+- family: Chang
+  given: Kevin
+- family: Loretz
+  given: Michael
+- family: Degen
+  given: Christian L.
+doi: 10.1146/annurev-physchem-040513-103659
+issue: 1
+journalLong: Annual Review of Physical Chemistry
+journalShort: Annu. Rev. Phys. Chem.
+pages: 83-105
+timeAdded: 2020-05-22 16:31:51.217252+00:00
+timeOpened: 2020-05-22 16:31:51.217291+00:00
+title: 'Nitrogen-Vacancy Centers in Diamond: Nanoscale Sensors for Physics and Biology'
+volume: 65
+year: 2014
+---
+authors:
+- family: "Kup\u010De"
+  given: "\u0112riks"
+- family: Claridge
+  given: Tim D. W.
+doi: 10.1002/anie.201705506
+issue: 39
+journalLong: Angewandte Chemie International Edition
+journalShort: Angew. Chem. Int. Ed.
+pages: 11779-11783
+timeAdded: 2020-05-22 09:20:14.915945+00:00
+timeOpened: 2020-05-22 10:09:57.826548+00:00
+title: 'NOAH: NMR Supersequences for Small Molecule Analysis and Structure Elucidation'
+volume: 56
+year: 2017
+---
+authors:
+- family: Foroozandeh
+  given: Mohammadali
+- family: Morris
+  given: Gareth A.
+- family: Nilsson
+  given: Mathias
+doi: 10.1002/chem.201800524
+issue: 53
+journalLong: "Chemistry \u2013 A European Journal"
+journalShort: Chem. Eur. J.
+pages: 13988-14000
+timeAdded: 2020-05-22 09:20:20.036051+00:00
+timeOpened: 2020-05-22 10:09:55.876853+00:00
+title: PSYCHE Pure Shift NMR Spectroscopy
+volume: 24
+year: 2018
+---
+authors:
 - family: Mansfield
   given: Steven J.
 - family: Smith
@@ -14,56 +68,8 @@ issue: 8
 journalLong: Organic Letters
 journalShort: Org. Lett.
 pages: 2918-2922
+timeAdded: 2020-05-22 10:09:26.292614+00:00
+timeOpened: 2020-05-22 10:09:53.224842+00:00
 title: A General Copper-Catalyzed Synthesis of Ynamides from 1,2-Dichloroenamides
 volume: 21
 year: 2019
----
-authors:
-- family: Foroozandeh
-  given: Mohammadali
-doi: 10.1002/chem.201800524
-issue: 53
-journalLong: "Chemistry \u2013 A European Journal"
-journalShort: Chem. Eur. J.
-pages: 13988-14000
-title: PSYCHE Pure Shift NMR Spectroscopy
-volume: 24
-year: 2018
----
-authors:
-- family: "Kup\u010De"
-  given: "\u0112riks"
-- family: Claridge
-  given: Tim D. W.
-doi: 10.1002/anie.201705506
-issue: 39
-journalLong: Angewandte Chemie International Edition
-journalShort: Angew. Chem. Int. Ed.
-pages: 11779-11783
-title: 'NOAH: NMR Supersequences for Small Molecule Analysis and Structure Elucidation'
-volume: 56
-year: 2017
----
-authors:
-- family: Jones
-  given: Jonathan A.
-doi: 10.1016/j.pnmrs.2010.11.001
-issue: 2
-journalLong: Progress in Nuclear Magnetic Resonance Spectroscopy
-journalShort: Prog. Nucl. Magn. Reson. Spectrosc.
-pages: 91-120
-title: Quantum computing with NMR
-volume: 59
-year: 2011
----
-authors:
-- family: Jones
-  given: Jonathan A.
-doi: 10.1016/j.pnmrs.2010.11.001
-issue: 2
-journalLong: Progress in Nuclear Magnetic Resonance Spectroscopy
-journalShort: Prog. Nucl. Magn. Reson. Spectrosc.
-pages: 91-120
-title: Quantum computing with NMR
-volume: 59
-year: 2011
