@@ -358,6 +358,11 @@ async def savePDF(path, doi, fmt):
         psrc = path.strip()
         try:
             async with _g.ahSession.get(psrc) as resp:
+                # Handle bad HTTP status codes.
+                if resp.status != 200:
+                    return _error("savePDF: URL '{}' returned {} ({})".format(psrc,
+                                                                              resp.status,
+                                                                              resp.reason))
                 # Try to get the file size.
                 filesize = None
                 try:
@@ -387,7 +392,8 @@ async def savePDF(path, doi, fmt):
 
         # lookup failed
         except (aiohttp.client_exceptions.ContentTypeError,
-                aiohttp.client_exceptions.InvalidURL):
+                aiohttp.client_exceptions.InvalidURL,
+                aiohttp.client_exceptions.ClientConnectorError):
             return _error("savePDF: URL '{}' not accessible".format(psrc))
         else:
             return _ret.SUCCESS
