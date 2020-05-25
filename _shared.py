@@ -81,13 +81,14 @@ class _g():
     ptPink  = "#f589d1" if darkmode else "#8629ab"
     ptGreen = "#17cf48" if darkmode else "#2a731f"
     ptBlue  = "#45c6ed" if darkmode else "#3344de"
-    ansiIntroBlue  = a(81)  if darkmode else a(19)
-    ansiErrorRed   = a(196)
-    ansiErrorText  = a(210) if darkmode else a(88)
-    ansiDiffRed    = a(202) if darkmode else a(124)
-    ansiDiffGreen  = a(50)  if darkmode else a(3)
-    ansiDebugGrey  = a(240) if darkmode else a(246)
-    ansiHelpYellow = a(220) if darkmode else a(88)
+    ptRed   = "#f53d50" if darkmode else "#b00718"
+    ansiErrorRed    = a(196)
+    ansiErrorText   = a(210) if darkmode else a(88)
+    ansiDiffRed     = a(203) if darkmode else a(125)
+    ansiDiffGreen   = a(50)  if darkmode else a(28)
+    ansiDebugGrey   = a(240) if darkmode else a(246)
+    ansiHelpYellow  = a(220) if darkmode else a(88)
+    ansiTitleBlue   = a(81)  if darkmode else a(19)
     ansiBold = "\033[1m"
     ansiReset = "\033[0m"
 
@@ -162,24 +163,43 @@ class _progress():
     """
     Object for progress reporting of aiohttp reports.
     """
-    def __init__(self, total):
+    def __init__(self, total, fstr=None):
         self.total = total
+        self.fstr = fstr
         self.current = 0
 
-    def incr(self):
-        self.current += 1
+    def incr(self, amount):
+        self.current += amount
+
+    def fmtCurrent(self):
+        return self.fstr.format(self.current) \
+            if self.fstr is not None \
+            else self.current
+
+    def fmtTotal(self):
+        return self.fstr.format(self.total) \
+            if self.fstr is not None \
+            else self.total
 
 
-async def _spinner(prog, message):
+
+async def _spinner(message, prog=None, units=""):
     """
-    Fancy spinner to report on progress. Code mostly lifted from Fluent Python.
+    Fancy spinner to report on progress. Code lifted from Fluent Python with
+    some extra processing.
     """
     t = 0
     write = sys.stdout.write
     flush = sys.stdout.flush
     for c in cycle("|/-\\"):
         try:
-            msg = "{} {} ({}/{}) ".format(c, message, prog.current, prog.total)
+            if prog is None:
+                msg = "{} {}...".format(c, message)
+            else:
+                msg = "{} {}... ({}/{}{}{}) ".format(c, message, prog.fmtCurrent(),
+                                                     prog.fmtTotal(),
+                                                     (" " if units else ""),
+                                                     units)
             write(msg)
             flush()
             await asyncio.sleep(0.1)
@@ -190,7 +210,13 @@ async def _spinner(prog, message):
             write('\x08' * len(msg))
             flush()
             c = '-'
-            msg = "{} {} ({}/{}) ".format(c, message, prog.current, prog.total)
+            if prog is None:
+                msg = "{} {}... Done.".format(c, message)
+            else:
+                msg = "{} {}... ({}/{}{}{}) ".format(c, message, prog.fmtCurrent(),
+                                                     prog.fmtTotal(),
+                                                     (" " if units else ""),
+                                                     units)
             write(msg)
             print()
             break

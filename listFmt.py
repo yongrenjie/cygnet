@@ -16,16 +16,17 @@ def printListHead(layout_str, fss):
     # blank row
     print()
     # header row
-    print(layout_str.format("#", number_fs,
-                            "Authors", author_fs,
-                            "Year", year_fs,
-                            "Journal", journal_fs,
-                            "Title & DOI", title_fs))
+    print(_g.ansiBold + layout_str.format("#", number_fs,
+                                          "Authors", author_fs,
+                                          "Year", year_fs,
+                                          "Journal", journal_fs,
+                                          "Title & DOI", title_fs) \
+          + _g.ansiReset)
     # a horizontal line
     print("-" * (number_fs + author_fs + year_fs + journal_fs + title_fs))
 
 
-def listOneArticle(i, a, layout_str, fss):
+def listOneArticle(i, a, layout_str, fss, printAvail=True):
     """
     Print one article.
      i          - the number in front.
@@ -38,6 +39,9 @@ def listOneArticle(i, a, layout_str, fss):
     """
     # unpack field sizes
     number_fs, author_fs, year_fs, journal_fs, title_fs = fss
+    # get PDF availability if required
+    if printAvail:
+        pdfAvailStr = listPDFAvailability(a["doi"])
     # generate volume info
     volinfo = fmtVolInfo(a)
     # print the first round of information
@@ -53,6 +57,7 @@ def listOneArticle(i, a, layout_str, fss):
     while any([a["authors"] != [],
                a["title"] != "",
                a["doi"] != "",
+               printAvail and pdfAvailStr != "",
                volinfo != ""]):
         # get an author if there is one
         try:
@@ -63,6 +68,12 @@ def listOneArticle(i, a, layout_str, fss):
         if a["title"] == "" and a["doi"] != "":
             a["title"] = a["doi"]
             a["doi"] = ""
+        # if PDF availability is desired, and the title and DOI have both been printed,
+        # replace title with PDF availability
+        if printAvail and a["title"] == "" and a["doi"] == "":
+            a["title"] = pdfAvailStr
+            printAvail = ""
+        # print the next line of text
         print(layout_str.format("", number_fs,
                                 fmtAuthor(next_author, style="display"), author_fs,
                                 "", year_fs,
@@ -127,12 +138,39 @@ def getFS(arts, refnos):
                      max(len(fmtVolInfo(art)) for art in arts),
                      len("Journal info")
                      ) + spaces
-    # either use up the remaining space, or extend to the end of the longest title
+    # either use up the remaining space, or extend to the end of the longest title.
+    # but make sure we use at least 10 columns
     total_columns = os.get_terminal_size().columns
     title_fs = min(total_columns - number_fs - author_fs - year_fs - journal_fs,
                    max(len(a["title"]) for a in arts))
+    # Make it a reasonable size... OK it's because when you print ANSI escape
+    # codes, you have to make sure that it's all on the same line, otherwise the
+    # colour for the subsequent lines gets completely messed up. Now, the
+    # listPDFAvailability() function returns a string that (including the ANSI
+    # escape codes) is at most 37 characters. If we don't make title_fs at least
+    # 37 characters long, then the colours will behave VERY weirdly. 40 is just
+    # a nice round number near 37. And let's face it, do you really want to read
+    # titles formatted in a field that is tiny?
+    title_fs = max(40, title_fs)
 
     return (number_fs, author_fs, year_fs, journal_fs, title_fs)
+
+
+def listPDFAvailability(doi):
+    """
+    Prints a green tick or a red cross indicating whether the PDF and/or SI
+    are available for a given DOI.
+    """
+    formats = ["pdf", "si"]
+    s = ""
+    for f in formats:
+        p = _g.currentPath.parent / f / (doi.replace('/','#') + ".pdf")
+        if p.exists() and p.is_file():
+            s += "{}\u2714{}{}".format(_g.ansiDiffGreen, _g.ansiReset, f)
+        else:
+            s += "{}\u2718{}{}".format(_g.ansiDiffRed, _g.ansiReset, f)
+        s += "  "
+    return s[:-2]  # remove the extra two spaces
 
 
 def fmtAuthor(author, style=None):

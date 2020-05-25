@@ -24,6 +24,9 @@ from _shared import (_g, _p, _ret, _helpdeco, _asynchelpdeco, _timedeco,
 
 
 class peepPrompt():
+    """
+    Interactive prompt.
+    """
     style = pt.styles.Style.from_dict({
         "prompt": "{} italic".format(_g.ptPink),
         ""      : _g.ptGreen,
@@ -43,11 +46,13 @@ class peepPrompt():
              "| r[ead] a file         w[rite] to a file                        |" + "\n" + \
              "|                                                                |" + "\n" + \
              "| l[ist] all articles   so[rt] articles     s[earch] in articles |" + "\n" + \
+             "|                                           ^^^^^^^^^^^^^^^^^^^^ |" + "\n" + \
+             "|                                              NOT IMPLEMENTED   |" + "\n" + \
              "|                                                                |" + "\n" + \
              "| a[dd] a DOI           d[elete] a ref      e[dit] a ref         |" + "\n" + \
              "| c[ite] a ref          u[pdate] a ref                           |" + "\n" + \
              "|                                                                |" + "\n" + \
-             "| ap - add a PDF        dp - delete a PDF   (NOT IMPLEMENTED)    |" + "\n" + \
+             "| ap - add a PDF        dp - delete a PDF                        |" + "\n" + \
              "|                                                                |" + "\n" + \
              "| un[do]                h <cmd> - help      q[uit]               |" + "\n" + \
              "\\----------------------------------------------------------------/" + "{}".format(_g.ansiReset) + "\n"
@@ -67,15 +72,17 @@ class peepPrompt():
                     # Remove anything after a comment
                     if self.commentSymbol in line:
                         line = line.split(self.commentSymbol)[0].rstrip()
+                    # Separate the command from its arguments.
                     line = line.split()
                     if not line:
                         continue
                     else:
                         cmd, args = line[0], line[1:]
-                    cmd = cmd.lstrip(":")  # I have typed in :q more than once
+                    cmd = cmd.lstrip(":")   # I have typed in :q more than once
 
-                    # Look for help command. If so, remove help and delegate to the
-                    # actual command which will print its own docstring.
+                    # Look for help command. If so, remove help from the command,
+                    # and delegate to the actual command which will print its
+                    # own docstring. (See _helpdeco.)
                     help = False
                     if cmd in ["h", "help"]:
                         if args == []:   # general help wanted
@@ -85,6 +92,8 @@ class peepPrompt():
                             help = True
                             cmd = args[0]
                             args = args[1:]
+                            # 'q' doesn't delegate to a routine, so we need to
+                            # catch it here.
                             if cmd in ["q", "quit", "zzzpeep"]:
                                 print("{}{}{}".format(_g.ansiHelpYellow,
                                                       "\n    Quits the programme.\n",
@@ -92,54 +101,55 @@ class peepPrompt():
                                 continue
 
                     # If any numbers are in the cmd, separate the bit with 
-                    #  a number and prepend it to args. This allows us to do
-                    #  things like "o1" instead of "o 1". Yes I'm lazy.
+                    # a number and prepend it to args. This allows us to do
+                    # things like "o1" instead of "o 1". Yes I'm lazy.
                     n = next((i for i, c in enumerate(cmd) if c.isdigit()), len(cmd))
                     if n < len(cmd):
                         args = [cmd[n:]] + args
                         cmd = cmd[:n]
 
-                    if cmd in ["q", "quit", "zzzpeep"]:         # QUIT
+                    if cmd in ["q", "quit", "zzzpeep"]:              # QUIT
                         break
-                    elif cmd in ["c", "cite"]:                  # CITE
+                    elif cmd in ["c", "cite"]:                       # CITE
                         asyncio.create_task(cite(args, help=help))
-                    elif cmd in ["o", "open"]:                  # OPEN
+                    elif cmd in ["o", "open"]:                       # OPEN
                         openRef(args, help=help)
-                    elif cmd in ["w", "write"]:                 # WRITE
+                    elif cmd in ["w", "write"]:                      # WRITE
                         write(args, help=help)
-                    elif cmd in ["l", "ls", "list"]:            # LIST
+                    elif cmd in ["l", "ls", "list"]:                 # LIST
                         listArticles(args, help=help)
-                    elif cmd in ["r", "read"]:                  # READ
+                    elif cmd in ["r", "read"]:                       # READ
                         read(args, help=help)
-                    elif cmd in ["e", "edit"]:                  # EDIT
+                    elif cmd in ["e", "edit"]:                       # EDIT
                         if help is False:
                             _saveHist(cmd, args)
                         editRef(args, help=help)
-                    elif cmd in ["a", "add"]:                   # ADD
+                    elif cmd in ["a", "add"]:                        # ADD
                         if help is False:
                             _saveHist(cmd, args)
                         await addRef(args, help=help)
-                    elif cmd in ["d", "del", "delete"]:         # DELETE
+                    elif cmd in ["d", "del", "delete"]:              # DELETE
                         if help is False:
                             _saveHist(cmd, args)
                         await deleteRef(args, help=help)
-                    elif cmd in ["u", "up", "update"]:          # UPDATE
+                    elif cmd in ["u", "up", "update"]:               # UPDATE
                         if help is False:
                             _saveHist(cmd, args)
                         await updateRef(args, help=help)
-                    elif cmd in ["s", "se", "search"]:          # SEACH
+                    elif cmd in ["s", "se", "search"]:               # SEARCH
                         _error("it's not been implemented yet...")
-                    elif cmd in ["so", "sort"]:                 # SORT
+                    elif cmd in ["so", "sort"]:                      # SORT
                         if help is False:
                             _saveHist(cmd, args)
                         sortArticleList(args, help=help)
-                    elif cmd in ["un", "undo"]:                 # UNDO
+                    elif cmd in ["ap", "addp", "addpd", "addpdf"]:   # ADDPDF
+                        await addPDF(args, help=help)
+                    elif cmd in ["dp", "delp", "delpdf",             # DELETEPDF
+                                 "deletep", "deletepdf"]:
+                        await deletePDF(args, help=help)
+                    elif cmd in ["un", "undo"]:                      # UNDO
                         _undo(help=help)
-                    ## This prints the global article list in order of time added,
-                    ## but doesn't actually modify it.
-                    # elif cmd in ["quack"]:
-                    #     listArticles(None, *sortCopyArticles(mode="timeAdded"))
-                    elif cmd in ["exec"] and _g.debug:          # EXEC for debugging
+                    elif cmd in ["exec"] and _g.debug:               # EXEC
                         import traceback
                         # Execute arbitrary code. Useful for inspecting internal state.
                         try:
@@ -147,11 +157,11 @@ class peepPrompt():
                             print(locals()["_res"])
                         except Exception as e:
                             traceback.print_exc()
-                    elif cmd in ["pee"]:                        # PEE
+                    elif cmd in ["pee"]:                             # PEE
                         print("zzzpee...")
-                    elif cmd in ["peep", "PEEP"]:               # PEEP
+                    elif cmd in ["peep", "PEEP"]:                    # PEEP
                         print("PEEP!")
-                    else:                                       # unknown
+                    else:                                            # unknown
                         _error("command '{}' not recognised".format(cmd))
 
                     # Need a tiny sleep to paper over a weird bug.
@@ -324,7 +334,8 @@ def listArticles(args=None, articles=None, refnos=None, maxAuth=5, type="long"):
     Usage: l[ist] [refnos...]
 
     Lists articles in the currently loaded database. If no further reference
-    numbers are specified, lists all articles.
+    numbers are specified, lists all articles. Also prints information about
+    whether the full text PDF and the SI are stored in the database.
 
     Reference numbers may be specified as a comma- or space-separated series of
     integers or ranges (low-high, inclusive). For example, 'l 41-43' lists
@@ -408,6 +419,8 @@ def listArticles(args=None, articles=None, refnos=None, maxAuth=5, type="long"):
     # Truncate authors if the list was called with just 'l' from command-line.
     if args == []:
         arts = [listFmt.truncateAuthors(a, maxAuth=5) for a in arts]
+    # Always print PDF availability.
+    printAvail = True
 
     # Get field sizes
     layout_str = "{0:<{1}}{2:{3}}{4:<{5}}{6:{7}}{8:{9}}"
@@ -420,15 +433,16 @@ def listArticles(args=None, articles=None, refnos=None, maxAuth=5, type="long"):
     # Print all article contents
     if type == "long":
         for r, a in zip(refnos, arts):
-            listFmt.listOneArticle(r, a, layout_str, fss)
+            listFmt.listOneArticle(r, a, layout_str, fss, printAvail)
         return _ret.SUCCESS
     elif type == "short":
         # refnos and arts have already been set correctly, so we can index from 0 to 3
-        listFmt.listOneArticle(refnos[0], arts[0], layout_str, fss)
-        listFmt.listOneArticle(refnos[1], arts[1], layout_str, fss)
+        # don't print PDF availability.
+        listFmt.listOneArticle(refnos[0], arts[0], layout_str, fss, False)
+        listFmt.listOneArticle(refnos[1], arts[1], layout_str, fss, False)
         listFmt.printDots(layout_str, fss)
-        listFmt.listOneArticle(refnos[2], arts[2], layout_str, fss)
-        listFmt.listOneArticle(refnos[3], arts[3], layout_str, fss)
+        listFmt.listOneArticle(refnos[2], arts[2], layout_str, fss, False)
+        listFmt.listOneArticle(refnos[3], arts[3], layout_str, fss, False)
         return _ret.SUCCESS
     else:
         return _error("listArticles: invalid type '{}'".format(type))
@@ -685,14 +699,14 @@ async def addRef(args):
 
     # create spinner
     prog = _progress(len(dois))
-    spin = asyncio.create_task(_spinner(prog, "Fetching data..."))
+    spin = asyncio.create_task(_spinner("Fetching metadata", prog))
 
     # Perform asynchronous HTTP requests
     arts = []
     crefCoros = [refMgmt.getMetadataFromDOI(doi, _g.ahSession) for doi in dois]
     for coro in asyncio.as_completed(crefCoros):
         arts.append(await coro)
-        prog.incr()
+        prog.incr(1)
     # Kill spinner, and actually wait for it to be killed, otherwise
     # the output below gets messed up terribly
     spin.cancel()
@@ -701,7 +715,7 @@ async def addRef(args):
     for a in arts:
         # Check for failure
         if a["title"] is None:
-            _error("addRef: invalid DOI '{}'".format(doi))
+            _error("addRef: invalid DOI '{}'".format(a["doi"]))
             no += 1
             continue
         else:
@@ -882,7 +896,7 @@ async def updateRef(args):
 
     # create spinner
     prog = _progress(len(refnos))
-    spin = asyncio.create_task(_spinner(prog, "Fetching data..."))
+    spin = asyncio.create_task(_spinner("Fetching metadata", prog))
 
     # Lists containing dictionaries of old and new articles. Since data is
     # being pulled asynchronously, we need to be careful with the sorting. We
@@ -897,7 +911,7 @@ async def updateRef(args):
     crefCoros = [refMgmt.getMetadataFromDOI(doi, _g.ahSession) for doi in dois]
     for coro in asyncio.as_completed(crefCoros):
         anews.append(await coro)
-        prog.incr()
+        prog.incr(1)
     # Kill spinner, and actually wait for it to be killed, otherwise
     # the output below gets messed up terribly
     spin.cancel()
@@ -984,6 +998,207 @@ async def deleteRef(args):
     return _ret.SUCCESS
 
 
+@_asynchelpdeco
+@_timedeco
+async def addPDF(args):
+    """
+    Usage: addpdf (or ap) [refnos]
+
+    Add a PDF to an existing reference in the database. Arguments can be
+    provided as refnos. See 'h list' for more details on the syntax. This
+    function will then prompt you for a link to the file; this can be provided
+    as either a URL or an (absolute) file system path. File paths can be most
+    easily provided by dragging-and-dropping a file into the terminal window.
+
+    Note that PDFs that have already been saved cannot be changed using this
+    command. You have to delete the PDF first (using 'dp'), then re-add the
+    new PDF.
+
+    ** Function details **
+    This is meant to be only invoked from the command-line.
+
+    Arguments:
+        args: List of command-line arguments.
+
+    Returns: TBD.
+    """
+    if _g.articleList == []:
+        return _error("addPDF: no articles have been loaded")
+    if args == []:
+        return _error("addPDF: no references selected")
+
+    # no formats to process; just refnos
+    refnos = refMgmt.parseRefno(",".join(args))
+    # Check the returned values
+    ls = len(_g.articleList)
+    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
+        return _error("addPDF: invalid argument{} '{}' given".format(_p(args),
+                                                                     " ".join(args)))
+
+    formats = ["pdf", "si"]
+    yes, no = 0, 0
+    # We wrap the whole thing in try/except to catch Ctrl-C, which will get us
+    # out of the entire loop quickly. Sending Ctrl-D just moves us to the next
+    # refno.
+    try:
+        for i, r in enumerate(refnos):
+            # Print the title.
+            doi = _g.articleList[r - 1]["doi"]
+            title = _g.articleList[r - 1]["title"]
+            year = _g.articleList[r - 1]["year"]
+            author = _g.articleList[r - 1]["authors"][0]["family"]
+            if i != 0:
+                print()  # Just a bit easier to read.
+            print("{}({}) {} {}:{} {}".format(_g.ansiBold, r, author, year,
+                                               _g.ansiReset, title))
+
+            # Check whether the PDFs are already available.
+            avail = {}  # mapping of format -> Bool
+            for f in formats:
+                p = _g.currentPath.parent / f / (doi.replace('/','#') + ".pdf")
+                if p.exists() and p.is_file():
+                    print(" {}\u2714{} {}   ".format(_g.ansiDiffGreen, _g.ansiReset, f))
+                    avail[f] = True
+                else:
+                    print(" {}\u2718{} {}   ".format(_g.ansiDiffRed, _g.ansiReset, f))
+                    avail[f] = False
+
+            style = pt.styles.Style.from_dict({"prompt": _g.ptBlue, "": _g.ptGreen})
+            msg = {"pdf": "addPDF: provide path to PDF (leave empty to skip): ",
+                   "si": "addPDF: provide path to SI (leave empty to skip): "}
+            # If both are available
+            if avail["pdf"] and avail["si"]:
+                print("Both PDF and SI found.")
+                continue
+            # At least one isn't available
+            else:
+                for f in (fmt for fmt in avail.keys() if not avail[fmt]):
+                    try:
+                        ans = await pt.PromptSession().prompt_async(msg[f],
+                                                                    style=style)
+                    except EOFError:  # move on to next question...
+                        continue
+                    if ans.strip():
+                        saveTask = asyncio.create_task(refMgmt.savePDF(ans, doi, f))
+                        await asyncio.wait([saveTask])
+                        if saveTask.result() == _ret.FAILURE:
+                            no += 1
+                        else:
+                            yes += 1
+    except KeyboardInterrupt:
+        pass
+
+    print("addPDF: {} PDFs added, {} failed".format(yes, no))
+    return _ret.SUCCESS
+
+
+@_asynchelpdeco
+@_timedeco
+async def deletePDF(args):
+    """
+    Usage: deletepdf (or dp) refnos[...]
+
+    Deletes PDF files associated with one or more references.
+
+    At least one refno must be specified. For more details about the format in
+    which refnos are specified, type 'h list'.
+
+    At the confirmation prompt, enter the document that will be deleted.
+
+    ** Function details **
+    This is only meant to be called from the command line.
+
+    Arguments:
+        args: List of command-line arguments.
+
+    Returns:
+        Return values as described in _ret.
+    """
+    if _g.articleList == []:
+        return _error("deletePDF: no articles have been loaded")
+    if args == []:
+        return _error("deletePDF: no references selected")
+
+    # no formats to process; just refnos
+    refnos = refMgmt.parseRefno(",".join(args))
+    # Check the returned values
+    ls = len(_g.articleList)
+    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
+        return _error("deletePDF: invalid argument{} '{}' given".format(_p(args),
+                                                                        " ".join(args)))
+
+    yes = 0
+    for i, r in enumerate(refnos):
+        # Print the title.
+        doi = _g.articleList[r - 1]["doi"]
+        title = _g.articleList[r - 1]["title"]
+        year = _g.articleList[r - 1]["year"]
+        author = _g.articleList[r - 1]["authors"][0]["family"]
+        if i != 0:
+            print()  # Just a bit easier to read.
+        print("{}({}) {} {}:{} {}".format(_g.ansiBold, r, author, year,
+                                           _g.ansiReset, title))
+        # Check whether the PDFs are actually available.
+        avail = {}  # mapping of format -> Bool
+        for f in ["pdf", "si"]:
+            p = _g.currentPath.parent / f / (doi.replace('/','#') + ".pdf")
+            if p.exists() and p.is_file():
+                print(" {}\u2714{} {}   ".format(_g.ansiDiffGreen, _g.ansiReset, f))
+                avail[f] = True
+            else:
+                print(" {}\u2718{} {}   ".format(_g.ansiDiffRed, _g.ansiReset, f))
+                avail[f] = False
+
+        # If both are not available
+        if not avail["pdf"] and not avail["si"]:
+            print("No PDFs associated with reference {} found.".format(r))
+            continue
+        # At least one available. Prompt user for format to delete
+        else:
+            style = pt.styles.Style.from_dict({"prompt": "{} bold".format(_g.ptBlue),
+                                               "": _g.ptGreen})
+            msg = "deletePDF: Confirm deletion by typing formats to be deleted: "
+            try:
+                ans = await pt.PromptSession().prompt_async(msg)
+            except (KeyboardInterrupt, EOFError):
+                continue
+
+            # Parse user input and delete files as necessary
+            else:
+                ans = ans.replace("pdf", "p").replace("si", "s")
+                fs = refMgmt.parseFormat(ans)
+                if fs == _ret.FAILURE or any(f not in ['p', 's'] for f in fs) \
+                        or ('p' in fs and not avail["pdf"]) \
+                        or ('s' in fs and not avail["si"]):
+                    _error("deletePDF: invalid response, no PDFs deleted")
+                    continue
+                if 'p' in fs:
+                    path = _g.currentPath.parent / "pdf" / \
+                        (doi.replace('/','#') + ".pdf")
+                    try:
+                        subprocess.run(["rm", str(path)],
+                                       stderr=subprocess.DEVNULL,
+                                       check=True)
+                    except subprocess.CalledProcessError:  # file not found
+                        pass
+                    else:
+                        yes += 1
+                if 's' in fs:
+                    path = _g.currentPath.parent / "si" / \
+                        (doi.replace('/','#') + ".pdf")
+                    try:
+                        subprocess.run(["rm", str(path)],
+                                       stderr=subprocess.DEVNULL,
+                                       check=True)
+                    except subprocess.CalledProcessError:  # file not found
+                        pass
+                    else:
+                        yes += 1
+
+    print("deletePDF: {} PDFs deleted".format(yes))
+    return _ret.SUCCESS
+
+
 #############################################################################
 #### Coroutine to autosave current list at regular intervals.
 
@@ -1053,6 +1268,9 @@ def backup():
 
 async def main():
     # STARTUP CODE
+
+    # Resize terminal
+    # sys.stdout.write("\x1b[8;{rows};{cols}t".format(rows=32, cols=100))
 
     # Parse sys.argv
     parser = argparse.ArgumentParser()

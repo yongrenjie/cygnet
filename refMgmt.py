@@ -3,7 +3,9 @@ This module contains helper functions which act on PDFs or DOIs.
 """
 
 import re
+import sys
 import subprocess
+import asyncio
 from pathlib import Path
 from copy import deepcopy
 
@@ -83,17 +85,17 @@ def parseFormat(s):
     Takes a string s and returns a list of [A-Za-z] characters inside.
     If there aren't any such characters, this returns an empty list, not None.
     """
-    t = []
+    t = set()
     try:
         for i in s:
             if i.isalpha():
-                t.append(i)
+                t.add(i)
     except (AttributeError, TypeError):
         # AttributeError -- isalpha() failed (e.g. integers)
         # TypeError      -- input wasn't iterable
         return _ret.FAILURE
     else:
-        return t
+        return list(t)
 
 
 def unicode2Latex(s):
@@ -315,4 +317,79 @@ def getDOIFromPDF(p):
     This method is *very* crude. It just utilises strings(1) and some magic regexes.
     """
     pass
+
+
+async def savePDF(path, doi, fmt):
+    """
+    Saves a PDF into the database itself.
+
+    path should be a string. It can either be a Web page, or a path to a file.
+    doi is the DOI.
+    fmt is either 'pdf' or 'si'.
+    """
+
+    # first, boot out any silly ideas
+    if '/' not in path:
+        return _error("savePDF: invalid path '{}'".format(path))
+
+    # This is crude, but should work as long as we only use absolute paths.
+    type = "file" if path.startswith('/') else "url"
+
+    # Construct the destination path (where the PDF should be saved to).
+    pdest = _g.currentPath.parent / fmt / (doi.replace('/','#') + ".pdf")
+
+    if type == "file":
+        # Process and check source path. Note that dragging-and-dropping
+        # into the terminal gives us escaped spaces, hence the replace().
+        psrc = Path(path.replace("\ "," ").strip())
+        if not psrc.is_file():
+            return _error("savePDF: file {} not found".format(psrc))
+        else:
+            try:
+                proc = subprocess.run(["cp", str(psrc), str(pdest)],
+                                      check=True)
+            except subprocess.CalledProcessError:
+                return _error("savePDF: file {} could not be copied"
+                              "to {}".format(psrc, pdest))
+            else:
+                return _ret.SUCCESS
+
+    if type == "url":
+        psrc = path.strip()
+        try:
+            async with _g.ahSession.get(psrc) as resp:
+                # Try to get the file size.
+                filesize = None
+                try:
+                    filesize = int(resp.headers["content-length"])
+                except (KeyError, ValueError):
+                    pass
+                # Create spinner.
+                if filesize is not None:
+                    prog = _progress(filesize/(2**20), fstr="{:.2f}")  # in MB
+                    spin = asyncio.create_task(_spinner("Downloading file", prog, "MB"))
+                else:
+                    spin = asyncio.create_task(_spinner("Downloading file"))
+
+                # Stream the content.
+                with open(pdest, 'wb') as fp:
+                    chunkSize = 2048   # bytes
+                    while True:  # good argument for assignment expression here
+                        chunk = await resp.content.read(chunkSize)
+                        if not chunk:
+                            break
+                        fp.write(chunk)
+                        if filesize is not None:
+                            prog.incr(chunkSize/(2**20))
+                # Cancel spinner
+                spin.cancel()
+                await asyncio.sleep(0)
+
+        # lookup failed
+        except (aiohttp.client_exceptions.ContentTypeError,
+                aiohttp.client_exceptions.InvalidURL):
+            return _error("savePDF: URL '{}' not accessible".format(psrc))
+        else:
+            return _ret.SUCCESS
+
 
