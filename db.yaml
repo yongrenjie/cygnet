@@ -1,4 +1,19 @@
 authors:
+- family: Glaser
+  given: S. J.
+doi: 10.1126/science.280.5362.421
+issue: 5362
+journalLong: Science
+journalShort: Science
+pages: 421-424
+timeAdded: 2020-05-25 06:13:38.835683+00:00
+timeOpened: 2020-05-25 06:13:38.835687+00:00
+title: 'Unitary Control in Quantum Ensembles: Maximizing Signal Intensity in Coherent
+  Spectroscopy'
+volume: 280
+year: 1998
+---
+authors:
 - family: Schirhagl
   given: Romana
 - family: Chang
@@ -68,8 +83,43 @@ issue: 8
 journalLong: Organic Letters
 journalShort: Org. Lett.
 pages: 2918-2922
-timeAdded: 2020-05-22 10:09:26.292614+00:00
-timeOpened: 2020-05-22 10:09:53.224842+00:00
+timeAdded: 2020-05-25 05:59:48.780875+00:00
+timeOpened: 2020-05-25 05:59:48.780879+00:00
 title: A General Copper-Catalyzed Synthesis of Ynamides from 1,2-Dichloroenamides
 volume: 21
 year: 2019
+---
+authors:
+- family: Suomivuori
+  given: Carl-Mikael
+- family: Latorraca
+  given: Naomi R.
+- family: Wingler
+  given: Laura M.
+- family: Eismann
+  given: Stephan
+- family: King
+  given: Matthew C.
+- family: Kleinhenz
+  given: Alissa L. W.
+- family: Skiba
+  given: Meredith A.
+- family: Staus
+  given: Dean P.
+- family: Kruse
+  given: Andrew C.
+- family: Lefkowitz
+  given: Robert J.
+- family: Dror
+  given: Ron O.
+doi: 10.1126/science.aaz0326
+issue: 6480
+journalLong: Science
+journalShort: Science
+pages: 881-887
+timeAdded: 2020-05-25 06:14:57.991085+00:00
+timeOpened: 2020-05-25 06:14:57.991089+00:00
+title: "Molecular mechanism of biased signaling in a prototypical G protein\u2013\
+  coupled receptor"
+volume: 367
+year: 2020

@@ -8,6 +8,7 @@ It also contains trivial functions that are used repeatedly throughout the code.
 import sys
 import subprocess
 import asyncio
+from itertools import cycle
 from locale import getpreferredencoding
 from enum import Enum
 from pathlib import Path
@@ -17,10 +18,13 @@ from copy import deepcopy
 from operator import itemgetter
 from collections import deque
 
-from crossref.restful import Works, Etiquette
+import aiohttp
 
 
 class _g():
+    # Programme information
+    versionNo = "0.2"
+
     ### Global variables used to store the state of the programme.
     # List of dictionaries, each containing a single article.
     articleList = []
@@ -44,20 +48,24 @@ class _g():
     articleListHistory = deque(maxlen=maxHistory)
     cmdHistory = deque(maxlen=maxHistory)
 
+    # Crossref identifying information.
+    crefHeaders = {"user-agent": "peeplatex/{}".format(versionNo) + \
+                                 "(https://github.com/yongrenjie/peeplatex," + \
+                                 " mailto:yongrenjie@gmail.com)"
+                   }
+    # aiohttp maximum concurrent requests & objects
+    ahMaxRequests = 20
+    ahConnector = aiohttp.TCPConnector(limit=ahMaxRequests)
+    ahSession = None   # this is set in main()
+
     # Debugging mode on/off
     debug = True
-    # Programme information
-    versionNo = "0.2"
-    myEtiquette = Etiquette('PeepLaTeX',
-                            versionNo,
-                            'https://github.com/yongrenjie',
-                            'yongrenjie@gmail.com')
     # Maximum number of backups to keep
     maxBackups = 5
     # Time interval for autosave (seconds). Note that this doesn't actually
     #  save unless changes have been made, i.e. changes > 0.
     autosaveInterval = 1
-    # Colours for the prompt
+
     # Check for Dark Mode (OS X)
     darkmode = True
     if sys.platform == "darwin":
@@ -67,7 +75,6 @@ class _g():
                            stderr=subprocess.DEVNULL, check=True)
         except subprocess.CalledProcessError:
             darkmode = False
-
     # Colours for various stuff. Names should be self-explanatory.
     def a(col):
         return "\033[38;5;{}m".format(col)
@@ -86,9 +93,8 @@ class _g():
 
     # System preferred encoding. Probably UTF-8.
     gpe = getpreferredencoding()
-    # Crossref object.
-    works = Works(etiquette=myEtiquette)
 
+    # Conversion of Unicode characters to LaTeX equivalents.
     unicodeLatexDict = {
         '\u00c0': '{\\`A}', '\u00c1': "{\\'A}", '\u00c2': '{\\^A}', '\u00c3': '{\\~A}',
         '\u00c4': '{\\"A}', '\u00c5': '{\\AA}', '\u00c6': '{\\AE}', '\u00c7': '{\\cC}',
@@ -150,6 +156,44 @@ class _ret(Enum):
     SUCCESS = 0
     FAILURE = 1
     pass
+
+
+class _progress():
+    """
+    Object for progress reporting of aiohttp reports.
+    """
+    def __init__(self, total):
+        self.total = total
+        self.current = 0
+
+    def incr(self):
+        self.current += 1
+
+
+async def _spinner(prog, message):
+    """
+    Fancy spinner to report on progress. Code mostly lifted from Fluent Python.
+    """
+    t = 0
+    write = sys.stdout.write
+    flush = sys.stdout.flush
+    for c in cycle("|/-\\"):
+        try:
+            msg = "{} {} ({}/{}) ".format(c, message, prog.current, prog.total)
+            write(msg)
+            flush()
+            await asyncio.sleep(0.1)
+            t += 0.1
+            write('\x08' * len(msg))
+            flush()
+        except asyncio.CancelledError:
+            write('\x08' * len(msg))
+            flush()
+            c = '-'
+            msg = "{} {} ({}/{}) ".format(c, message, prog.current, prog.total)
+            write(msg)
+            print()
+            break
 
 
 def _helpdeco(fn):

@@ -13,13 +13,14 @@ from tempfile import NamedTemporaryFile
 from operator import attrgetter, itemgetter
 
 import yaml
+import aiohttp
 import prompt_toolkit as pt
 
 import refMgmt
 import listFmt
 from _shared import (_g, _p, _ret, _helpdeco, _asynchelpdeco, _timedeco,
-                     _error, _debug, _copy,
-                     _undo, _saveHist, _clearHist)
+                     _error, _debug, _copy, _undo, _saveHist, _clearHist,
+                     _spinner, _progress)
 
 
 class peepPrompt():
@@ -318,7 +319,7 @@ def write(args=None, silent=False):
 
 @_helpdeco
 @_timedeco
-def listArticles(args=None, articles=None, refnos=None, type="long"):
+def listArticles(args=None, articles=None, refnos=None, maxAuth=5, type="long"):
     """
     Usage: l[ist] [refnos...]
 
@@ -328,7 +329,12 @@ def listArticles(args=None, articles=None, refnos=None, type="long"):
     Reference numbers may be specified as a comma- or space-separated series of
     integers or ranges (low-high, inclusive). For example, 'l 41-43' lists
     articles 41 through 43. 'l 4, 9, 21-24' lists articles 4, 9, and 21 through
-    24.
+    24. 'all' can be used as a shortcut for every reference number.
+
+    By default, if this is invoked with just 'l', the list of authors in each
+    article is truncated such that it occupies at most 5 lines. This default
+    behaviour can be overruled by specifying reference numbers, as described
+    above. Thus, using 'l all' will print the entire list but with all authors.
 
     ** Function details **
     Prints a list of articles. This function essentially has two interfaces.
@@ -398,6 +404,10 @@ def listArticles(args=None, articles=None, refnos=None, type="long"):
         if l != len(refnos):
             return _error("listArticles: articles and refnos "
                           "have different lengths ({} and {})".format(l, len(refnos)))
+
+    # Truncate authors if the list was called with just 'l' from command-line.
+    if args == []:
+        arts = [listFmt.truncateAuthors(a, maxAuth=5) for a in arts]
 
     # Get field sizes
     layout_str = "{0:<{1}}{2:{3}}{4:<{5}}{6:{7}}{8:{9}}"
@@ -657,22 +667,40 @@ async def addRef(args):
         return _error("addRef: no DOIs provided")
     yes = 0
     no = 0
+
+    # Check if any are already in the library
+    dois = []
     for doi in args:
-        # Check if it's already in the library
         found = False
         for r, art in enumerate(_g.articleList, start=1):
             if doi == art["doi"]:
-                _error("addRef: DOI '{}' already in library.\n".format(doi) + \
-                       "               Use 'u[pdate] {}' to refresh metadata.".format(r))
-                no += 1
                 found = True
                 break
         if found:
-            continue
+            _error("addRef: DOI '{}' already in library.\n".format(doi) + \
+                   "               Use 'u[pdate] {}' to refresh metadata.".format(r))
+            no += 1
+        else:
+            dois.append(doi)
 
-        # Otherwise, proceed to get the data
-        a = refMgmt.getMetadataFromDOI(doi)
-        if a is _ret.FAILURE:
+    # create spinner
+    prog = _progress(len(dois))
+    spin = asyncio.create_task(_spinner(prog, "Fetching data..."))
+
+    # Perform asynchronous HTTP requests
+    arts = []
+    crefCoros = [refMgmt.getMetadataFromDOI(doi, _g.ahSession) for doi in dois]
+    for coro in asyncio.as_completed(crefCoros):
+        arts.append(await coro)
+        prog.incr()
+    # Kill spinner, and actually wait for it to be killed, otherwise
+    # the output below gets messed up terribly
+    spin.cancel()
+    await asyncio.sleep(0)
+
+    for a in arts:
+        # Check for failure
+        if a["title"] is None:
             _error("addRef: invalid DOI '{}'".format(doi))
             no += 1
             continue
@@ -694,6 +722,7 @@ async def addRef(args):
             else:
                 print("addRef: DOI {} not added".format(doi))
                 no += 1
+
     print("addRef: {} DOIs added, {} failed".format(yes, no))
     _g.changes += ["add"] * yes
     sortArticleList()
@@ -741,7 +770,10 @@ def sortArticleList(args=None):
     if args is None or args[0] == "":
         mode, reverse = _g.sortMode, _g.sortReverse
     else:
+        # Pick out capital letter, then convert to lowercase
         reverse = True if args[0][0].isupper() else False
+        args[0] = args[0].lower()
+        # Choose sorting mode
         if args[0] in ["y", "yja", "year"]:  # default
             mode = "yja"
         elif args[0] in ["o", "op", "ope", "open", "opened", "timeopened"]:
@@ -750,7 +782,7 @@ def sortArticleList(args=None):
             mode = "timeAdded"
         else:
             return _error("sortArticleList: invalid sort mode '{}' provided".format(args[0]))
-        # set the current sort mode
+        # Set the current sorting mode
         _g.sortMode, _g.sortReverse = mode, reverse
     if _g.articleList == []:
         return _error("sortArticleList: no articles have been loaded")
@@ -848,12 +880,41 @@ async def updateRef(args):
         return _error("updateRef: invalid argument{} '{}' given".format(_p(args),
                                                                         " ".join(args)))
 
-    # potentially lots of HTTP requests! can we do this asynchronously?
-    for r in refnos:
-        yes = 0
-        aold = _g.articleList[r - 1]
-        anew = refMgmt.getMetadataFromDOI(aold["doi"])
-        if anew is _ret.FAILURE:
+    # create spinner
+    prog = _progress(len(refnos))
+    spin = asyncio.create_task(_spinner(prog, "Fetching data..."))
+
+    # Lists containing dictionaries of old and new articles. Since data is
+    # being pulled asynchronously, we need to be careful with the sorting. We
+    # first sort refnos & aolds by the DOI.
+    aolds = [_g.articleList[r - 1] for r in refnos]
+    anews = []
+    aolds, refnos = zip(*sorted(zip(aolds, refnos),
+                                key=(lambda t: t[0]["doi"])))
+
+    # Perform asynchronous HTTP requests
+    dois = [aold["doi"] for aold in aolds]
+    crefCoros = [refMgmt.getMetadataFromDOI(doi, _g.ahSession) for doi in dois]
+    for coro in asyncio.as_completed(crefCoros):
+        anews.append(await coro)
+        prog.incr()
+    # Kill spinner, and actually wait for it to be killed, otherwise
+    # the output below gets messed up terribly
+    spin.cancel()
+    await asyncio.sleep(0)
+
+    # After we finish pulling anews, it is out of order. We can sort anews by
+    # the DOI to get the same ordering as aolds and refnos. Then we re-sort
+    # everything by increasing refno so that we can present them to the user
+    # in increasing order of refno. But we deal with that later.
+    anews.sort(key=itemgetter("doi"))
+    # Because tuples are sorted by the first component, and refno's components
+    # are plain old ints, we don't need to specify a key.
+    refnos, aolds, anews = zip(*sorted(zip(refnos, aolds, anews)))
+
+    yes = 0
+    for r, aold, anew in zip(refnos, aolds, anews):
+        if anew["title"] is None:
             _error("updateRef: ref {} has an invalid DOI '{}'".format(r, aold["doi"]))
         # copy over timeAdded, timeOpened data from old reference
         anew["timeAdded"] = aold["timeAdded"]
@@ -1000,7 +1061,7 @@ async def main():
     # In the future we will change this to --debug, but I want all the
     # debugging stuff while this is still in development.
     parser.add_argument("--nodebug", help="Disable debugging output",
-                        action="store_false")
+                        action="store_true")
     args = parser.parse_args()
     infile = Path(args.db).resolve().expanduser() if args.db else Path.cwd()
     if infile.exists() and infile.is_dir():
@@ -1010,21 +1071,24 @@ async def main():
     _g.debug = not args.nodebug
 
     # MAIN TASKS
-    autosave = True
     # Start autosave task.
-    # It doesn't actually save unless there's something to save.
-    if autosave:
-        t_autosave = asyncio.create_task(_autosave())
-    # Start REPL
-    pmt = peepPrompt()
-    pmtloop = await pmt.loop()
-
-    print("Exiting... zzzpeep")
+    t_autosave = asyncio.create_task(_autosave())
+    # Launch aiohttp session.
+    async with aiohttp.ClientSession(connector=_g.ahConnector) as ahSession:
+        # ahSession only exists in this context manager block, so to avoid
+        # having to pass it 1 million times through subroutines, we bind it
+        # to a global variable first
+        _g.ahSession = ahSession
+        # Start the REPL
+        pmt = peepPrompt()
+        pmtloop = await pmt.loop()
 
     # SHUTDOWN CODE
-    # Stop other tasks
+    # Be cute
+    print("Exiting... zzzpeep")
+    # Stop autosave
     t_autosave.cancel()
-    # prompt_toolkit bug
+    # prompt_toolkit bug if you spam commands like crazy
     count = 0
     for t in asyncio.all_tasks():
         if "wait_for_timeout()" in repr(t):

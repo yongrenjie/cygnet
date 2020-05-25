@@ -7,11 +7,11 @@ import subprocess
 from pathlib import Path
 from copy import deepcopy
 
-from crossref.restful import Works
+import aiohttp
 from unidecode import unidecode
 
 import listFmt
-from _shared import _g, _ret, _error, _debug
+from _shared import (_g, _ret, _error, _debug, _progress, _spinner)
 
 
 def parseRefnoFormat(args, abbrevs=None):
@@ -20,17 +20,24 @@ def parseRefnoFormat(args, abbrevs=None):
     Does some preprocessing then delegates to parseRefno and parseFormat.
     Useful for commands o(pen) and c(ite).
     """
-    # Preprocess args
-    argstr = ",".join(args)
-    # Replace long forms with short forms, e.g. pdf -> p for openRef()
-    if abbrevs is not None:
-        for shortForm, longForm in abbrevs.items():
-            argstr = argstr.replace(longForm, shortForm)
-    # Find the first character in argstr that isn't [0-9,-]
-    x = next((i for i, c in enumerate(argstr) if c not in "1234567890,-"), len(argstr))
-    # Then repackage them
-    argRefno = argstr[:x]
-    argFormat = argstr[x:]
+    # Check for 'all' -- this makes our job substantially easier because
+    # 'all' is the refno and everything else is the format
+    if args[0] == "all":
+        argRefno = "all"
+        argFormat = ",".join(args[1:])
+    # Otherwise we have to do it the proper way
+    else:
+        # Preprocess args
+        argstr = ",".join(args)
+        # Replace long forms with short forms, e.g. pdf -> p for openRef()
+        if abbrevs is not None:
+            for shortForm, longForm in abbrevs.items():
+                argstr = argstr.replace(longForm, shortForm)
+        # Find the first character in argstr that isn't [0-9,-]
+        x = next((i for i, c in enumerate(argstr) if c not in "1234567890,-"), len(argstr))
+        # Then repackage them
+        argRefno = argstr[:x]
+        argFormat = argstr[x:]
 
     return (parseRefno(argRefno), parseFormat(argFormat))
 
@@ -44,7 +51,11 @@ def parseRefno(s):
           "1-4,43" -> [1, 2, 3, 4, 43]
     """
     s = s.split(",")
-    t = set()
+    # The easy way out
+    if s == ["all"]:
+        return list(range(1, len(_g.articleList) + 1))
+    # Otherwise we've got to parse it.
+    t = set()   # to avoid duplicates
     try:
         for i in s:
             if i == "":
@@ -64,7 +75,7 @@ def parseRefno(s):
         # TypeError  -- input wasn't iterable
         return _ret.FAILURE
     else:
-        return t
+        return list(t)
 
 
 def parseFormat(s):
@@ -188,21 +199,32 @@ def makeCitation(article, fmt):
         return _error("makeCitation: incorrect fmt {} received".format(fmt))
 
 
-def getMetadataFromDOI(doi):
+async def getMetadataFromDOI(doi, session):
     """
     Uses Crossref API to obtain article metadata using a DOI. Returns a
     dictionary that is immediately suitable for use in _g.articleList.
 
     Incorrect journal short forms are corrected here. The dictionary containing
     the corrections is stored in _g.
+
+    This needs to be passed an aiohttp.HTTPSession instance together with the
+    actual DOI.
     """
-    # TODO: can't print text before the doi is fetched.
-    # Maybe we can turn this into a coroutine anyway, with a spinner. :-)
-    print("getMetadataFromDOI: fetching data for {} from Crossref...".format(doi))
-    d = _g.works.doi(doi)
-    if d is None:   # lookup failed
-        return _ret.FAILURE
+    url = "https://api.crossref.org/works/{}".format(doi)
+
+    try:
+        async with session.get(url, headers=_g.crefHeaders) as resp:
+            d = await resp.json()
+    except aiohttp.client_exceptions.ContentTypeError:   # lookup failed
+        # Lookup failed. But we can't just pass _ret.FAILURE, because we need
+        # to know which doi caused the error. So we pass None in every other
+        # field. It's a bit overkill, but it seems more consistent than
+        # choosing one arbitrarily, and less hassle than returning a tuple.
+        return {"doi": doi, "title": None, "authors": None, "year": None,
+                "journalLong": None, "journalShort": None, "volume": None,
+                "issue": None, "pages": None}
     else:
+        d = d["message"]    # avoid repeating this subscript many times
         a = {}
         a["doi"] = doi
         a["authors"] = [{"family": auth["family"], "given": auth["given"]}
@@ -210,10 +232,20 @@ def getMetadataFromDOI(doi):
         a["year"] = int(d["published-print"]["date-parts"][0][0]) \
             if "published-print" in d else int(d["published-online"]["date-parts"][0][0])
         a["journalLong"] = d["container-title"][0]
-        a["journalShort"] = d["short-container-title"][0] \
-            if "short-container-title" in d else a["journalLong"]
+
+        # Short journal title.
+        if "short-container-title" in d:
+            try:
+                a["journalShort"] = d["short-container-title"][0]
+            except IndexError:
+                # 10.1126/science.280.5362.421, for example, has an empty list
+                # in d["short-container-title"]...
+                a["journalShort"] = a["journalLong"]
+        else:
+            a["journalShort"] = a["journalLong"]
         if a["journalShort"] in _g.journalReplacements:
             a["journalShort"] = _g.journalReplacements[a["journalShort"]]
+
         a["title"] = d["title"][0]
         a["volume"] = int(d["volume"]) if "volume" in d else ""
         a["issue"] = int(d["issue"]) if "issue" in d else ""

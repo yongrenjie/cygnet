@@ -32,6 +32,9 @@ def listOneArticle(i, a, layout_str, fss):
      a          - the article
      layout_str - the format string.
      fss        - tuple of field sizes: (number, author, year, journal, title)
+
+    WARNING: This modifies the article in-place, so should only be called on copies!
+    After this function is done, the info is completely unusable.
     """
     # unpack field sizes
     number_fs, author_fs, year_fs, journal_fs, title_fs = fss
@@ -86,12 +89,31 @@ def printDots(layout_str, fss):
     print()
 
 
+def truncateAuthors(art, maxAuth):
+    """
+    Truncates the list of authors to a maximum of maxAuth lines.
+
+    WARNING: This modifies the article in-place, so should only be called on copies!
+    It removes any authors in the middle.
+    """
+    if maxAuth <= 0:
+        return art
+    else:
+        l = len(art["authors"])
+        if l > maxAuth:
+            art["authors"] = [art["authors"][0],
+                              art["authors"][1],
+                              art["authors"][2],
+                              {"family": "..."},
+                              art["authors"][l - 1]]
+        return art
+
+
 def getFS(arts, refnos):
     """
     Calculates appropriate field sizes for the list output.
     Doesn't process arts or refnos -- just does it quite literally.
     """
-    # I don't think we need to make a copy here.
     # Calculate field widths
     spaces = 2
     number_fs = max(len(str(r)) for r in refnos) + spaces
