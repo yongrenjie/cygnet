@@ -53,6 +53,7 @@ class peepPrompt():
              "| c[ite] a ref          u[pdate] a ref                           |" + "\n" + \
              "|                                                                |" + "\n" + \
              "| ap - add a PDF        dp - delete a PDF                        |" + "\n" + \
+             "| f - fetch a PDF (requires VPN)                                 |" + "\n" + \
              "|                                                                |" + "\n" + \
              "| un[do]                h <cmd> - help      q[uit]               |" + "\n" + \
              "\\----------------------------------------------------------------/" + "{}".format(_g.ansiReset) + "\n"
@@ -108,46 +109,53 @@ class peepPrompt():
                         args = [cmd[n:]] + args
                         cmd = cmd[:n]
 
-                    if cmd in ["q", "quit", "zzzpeep"]:              # QUIT
+                    if cmd in ["q", "qu", "qui", "quit",             # QUIT
+                               "zzzpeep"]:
                         break
-                    elif cmd in ["c", "cite"]:                       # CITE
+                    elif cmd in ["c", "ci", "cit", "cite"]:          # CITE
                         asyncio.create_task(cite(args, help=help))
-                    elif cmd in ["o", "open"]:                       # OPEN
+                    elif cmd in ["o", "op", "ope", "open"]:          # OPEN
                         openRef(args, help=help)
-                    elif cmd in ["w", "write"]:                      # WRITE
+                    elif cmd in ["w", "wr", "wri", "writ",           # WRITE
+                                 "write"]:
                         write(args, help=help)
-                    elif cmd in ["l", "ls", "list"]:                 # LIST
+                    elif cmd in ["l", "li", "ls", "lis", "list"]:    # LIST
                         listArticles(args, help=help)
-                    elif cmd in ["r", "read"]:                       # READ
+                    elif cmd in ["r", "re", "rea", "read"]:          # READ
                         read(args, help=help)
-                    elif cmd in ["e", "edit"]:                       # EDIT
+                    elif cmd in ["e", "ed", "edi", "edit"]:          # EDIT
                         if help is False:
                             _saveHist(cmd, args)
                         editRef(args, help=help)
-                    elif cmd in ["a", "add"]:                        # ADD
+                    elif cmd in ["a", "ad", "add"]:                  # ADD
                         if help is False:
                             _saveHist(cmd, args)
                         await addRef(args, help=help)
-                    elif cmd in ["d", "del", "delete"]:              # DELETE
+                    elif cmd in ["d", "de", "del", "dele",           # DELETE
+                                 "delet", "delete"]:
                         if help is False:
                             _saveHist(cmd, args)
                         await deleteRef(args, help=help)
-                    elif cmd in ["u", "up", "update"]:               # UPDATE
+                    elif cmd in ["u", "up", "upd", "upda",           # UPDATE
+                                 "updat", "update"]:
                         if help is False:
                             _saveHist(cmd, args)
                         await updateRef(args, help=help)
                     elif cmd in ["s", "se", "search"]:               # SEARCH
                         _error("it's not been implemented yet...")
-                    elif cmd in ["so", "sort"]:                      # SORT
+                    elif cmd in ["so", "sor", "sort"]:               # SORT
                         if help is False:
                             _saveHist(cmd, args)
                         sortArticleList(args, help=help)
                     elif cmd in ["ap", "addp", "addpd", "addpdf"]:   # ADDPDF
                         await addPDF(args, help=help)
-                    elif cmd in ["dp", "delp", "delpdf",             # DELETEPDF
-                                 "deletep", "deletepdf"]:
+                    elif cmd in ["dp", "delp", "delpd", "delpdf",    # DELETEPDF
+                                 "deletep", "deletepd", "deletepdf"]:
                         await deletePDF(args, help=help)
-                    elif cmd in ["un", "undo"]:                      # UNDO
+                    elif cmd in ["f", "fe", "fet", "fetc",           # FETCH
+                                 "fetch"]:
+                        await fetchPDF(args, help=help)
+                    elif cmd in ["un", "und", "undo"]:               # UNDO
                         _undo(help=help)
                     elif cmd in ["exec"] and _g.debug:               # EXEC
                         import traceback
@@ -331,7 +339,7 @@ def write(args=None, silent=False):
 @_timedeco
 def listArticles(args=None, articles=None, refnos=None, maxAuth=5, type="long"):
     """
-    Usage: l[ist] [refnos...]
+    Usage: l[ist] [refnos]
 
     Lists articles in the currently loaded database. If no further reference
     numbers are specified, lists all articles. Also prints information about
@@ -452,7 +460,7 @@ def listArticles(args=None, articles=None, refnos=None, maxAuth=5, type="long"):
 @_timedeco
 def openRef(args):
     """
-    Usage: o[pen] refnos[...] [formats...]
+    Usage: o[pen] refno[...] [formats]
 
     Opens the original text of one or more references.
 
@@ -523,7 +531,7 @@ def openRef(args):
 @_timedeco
 async def cite(args):
     """
-    Usage: c[ite] refnos[...] [formats...]
+    Usage: c[ite] refno[...] [formats]
 
     Provides a citation for one or more references. Also copies the citation
     text to the clipboard.
@@ -594,7 +602,7 @@ async def cite(args):
 @_timedeco
 def editRef(args):
     """
-    Usage: e[dit] refnos[...]
+    Usage: e[dit] refno[...]
 
     Directly edit the entries for one or more citations, using vim. To cancel
     any changes made, exit vim using :cq.
@@ -863,7 +871,7 @@ def sortCopyArticles(articles=None, refnos=None, mode=None, reverse=None):
 @_timedeco
 async def updateRef(args):
     """
-    Usage: u[pdate] refnos[...]
+    Usage: u[pdate] refno[...]
 
     Update one or more references using the Crossref API. If any differences in
     the metadata are detected, then the user is prompted to accept or reject
@@ -960,7 +968,18 @@ async def updateRef(args):
 @_timedeco
 async def deleteRef(args):
     """
-    Delete one or more references.
+    Usage: d[elete] refno[...]
+
+    Deletes one or more references, as well as the PDFs associated with them.
+
+    ** Function details **
+    This is only meant to be invoked from the command-line.
+
+    Arguments:
+        args: List of command-line options.
+
+    Returns:
+        Return codes as defined in _ret.
     """
     if _g.articleList == []:
         return _error("deleteRef: no articles have been loaded")
@@ -985,6 +1004,8 @@ async def deleteRef(args):
     except (EOFError, KeyboardInterrupt):
         ans = "no"
     if ans.strip().lower() in ["", "y", "yes"]:
+        # Delete PDFs first.
+        await deletePDF(args, silent=True)
         # Must sort the list in descending order so that you don't get earlier
         #  deletions affecting later ones!!
         refnos.sort(reverse=True)
@@ -1002,7 +1023,7 @@ async def deleteRef(args):
 @_timedeco
 async def addPDF(args):
     """
-    Usage: addpdf (or ap) [refnos]
+    Usage: addpdf (or ap) refno[...]
 
     Add a PDF to an existing reference in the database. Arguments can be
     provided as refnos. See 'h list' for more details on the syntax. This
@@ -1094,22 +1115,21 @@ async def addPDF(args):
 
 @_asynchelpdeco
 @_timedeco
-async def deletePDF(args):
+async def deletePDF(args, silent=False):
     """
-    Usage: deletepdf (or dp) refnos[...]
+    Usage: deletepdf (or dp) refno[...]
 
     Deletes PDF files associated with one or more references.
 
-    At least one refno must be specified. For more details about the format in
-    which refnos are specified, type 'h list'.
-
-    At the confirmation prompt, enter the document that will be deleted.
+    At least one refno must be specified. For more details about how to specify
+    refnos, type 'h list'.
 
     ** Function details **
-    This is only meant to be called from the command line.
+    Deletes PDFs.
 
     Arguments:
-        args: List of command-line arguments.
+        args  : List of command-line arguments.
+        silent: If False, prompts the user for confirmation before deleting.
 
     Returns:
         Return values as described in _ret.
@@ -1134,20 +1154,23 @@ async def deletePDF(args):
         title = _g.articleList[r - 1]["title"]
         year = _g.articleList[r - 1]["year"]
         author = _g.articleList[r - 1]["authors"][0]["family"]
-        if i != 0:
-            print()  # Just a bit easier to read.
-        print("{}({}) {} {}:{} {}".format(_g.ansiBold, r, author, year,
-                                           _g.ansiReset, title))
+        if not silent:
+            if i != 0:
+                print()  # Just a bit easier to read.
+            print("{}({}) {} {}:{} {}".format(_g.ansiBold, r, author, year,
+                                               _g.ansiReset, title))
         # Check whether the PDFs are actually available.
         avail = {}  # mapping of format -> Bool
         for f in ["pdf", "si"]:
             p = _g.currentPath.parent / f / (doi.replace('/','#') + ".pdf")
             if p.exists() and p.is_file():
-                print(" {}\u2714{} {}   ".format(_g.ansiDiffGreen, _g.ansiReset, f))
                 avail[f] = True
+                if not silent:
+                    print(" {}\u2714{} {}   ".format(_g.ansiDiffGreen, _g.ansiReset, f))
             else:
-                print(" {}\u2718{} {}   ".format(_g.ansiDiffRed, _g.ansiReset, f))
                 avail[f] = False
+                if not silent:
+                    print(" {}\u2718{} {}   ".format(_g.ansiDiffRed, _g.ansiReset, f))
 
         # If both are not available
         if not avail["pdf"] and not avail["si"]:
@@ -1155,47 +1178,125 @@ async def deletePDF(args):
             continue
         # At least one available. Prompt user for format to delete
         else:
-            style = pt.styles.Style.from_dict({"prompt": "{} bold".format(_g.ptBlue),
-                                               "": _g.ptGreen})
-            msg = "deletePDF: Confirm deletion by typing formats to be deleted: "
-            try:
-                ans = await pt.PromptSession().prompt_async(msg)
-            except (KeyboardInterrupt, EOFError):
-                continue
-
-            # Parse user input and delete files as necessary
+            if not silent:
+                style = pt.styles.Style.from_dict({"prompt": "{} bold".format(_g.ptBlue),
+                                                   "": _g.ptGreen})
+                msg = "deletePDF: Confirm deletion by typing formats to be deleted: "
+                try:
+                    ans = await pt.PromptSession().prompt_async(msg)
+                except (KeyboardInterrupt, EOFError):
+                    continue  # to the next refno
+                # Parse user input and delete files as necessary
+                else:
+                    ans = ans.replace("pdf", "p").replace("si", "s")
+                    fs = refMgmt.parseFormat(ans)
+                    if fs == _ret.FAILURE or any(f not in ['p', 's'] for f in fs) \
+                            or ('p' in fs and not avail["pdf"]) \
+                            or ('s' in fs and not avail["si"]):
+                        _error("deletePDF: invalid response, no PDFs deleted")
+                        continue  # to the next refno
             else:
-                ans = ans.replace("pdf", "p").replace("si", "s")
-                fs = refMgmt.parseFormat(ans)
-                if fs == _ret.FAILURE or any(f not in ['p', 's'] for f in fs) \
-                        or ('p' in fs and not avail["pdf"]) \
-                        or ('s' in fs and not avail["si"]):
-                    _error("deletePDF: invalid response, no PDFs deleted")
-                    continue
-                if 'p' in fs:
-                    path = _g.currentPath.parent / "pdf" / \
-                        (doi.replace('/','#') + ".pdf")
-                    try:
-                        subprocess.run(["rm", str(path)],
-                                       stderr=subprocess.DEVNULL,
-                                       check=True)
-                    except subprocess.CalledProcessError:  # file not found
-                        pass
-                    else:
-                        yes += 1
-                if 's' in fs:
-                    path = _g.currentPath.parent / "si" / \
-                        (doi.replace('/','#') + ".pdf")
-                    try:
-                        subprocess.run(["rm", str(path)],
-                                       stderr=subprocess.DEVNULL,
-                                       check=True)
-                    except subprocess.CalledProcessError:  # file not found
-                        pass
-                    else:
-                        yes += 1
+                # Didn't want to be prompted. Just delete everything without
+                # any error checking.
+                fs = ['p', 's']
+
+            # If we reached here, that means we should delete files.
+            if 'p' in fs:
+                path = _g.currentPath.parent / "pdf" / \
+                    (doi.replace('/','#') + ".pdf")
+                try:
+                    subprocess.run(["rm", str(path)],
+                                   stderr=subprocess.DEVNULL,
+                                   check=True)
+                except subprocess.CalledProcessError:  # file not found
+                    pass
+                else:
+                    yes += 1
+            if 's' in fs:
+                path = _g.currentPath.parent / "si" / \
+                    (doi.replace('/','#') + ".pdf")
+                try:
+                    subprocess.run(["rm", str(path)],
+                                   stderr=subprocess.DEVNULL,
+                                   check=True)
+                except subprocess.CalledProcessError:  # file not found
+                    pass
+                else:
+                    yes += 1
 
     print("deletePDF: {} PDFs deleted".format(yes))
+    return _ret.SUCCESS
+
+
+@_asynchelpdeco
+@_timedeco
+async def fetchPDF(args):
+    """
+    Usage: f[etch] refno[...]
+
+    Attempts to find the URL, and download, the full text PDF for the specified
+    refnos. For more information on how to specify refnos, type 'h list'.
+
+    The heuristics used are hardcoded, so are not guaranteed to work on every
+    DOI, and indeed even those that work now may break later. But the major
+    publishers all work (for now). Supported publishers are: ACS, Wiley,
+    Elsevier, Nature, Science, Springer, Taylor and Francis, and Annual
+    Reviews (as of 27 May 2020).
+
+    Note that in order to download the full-text PDF, institutional access must
+    be enabled, e.g. via VPN. (Or, of course, the PDF must be open-access.)
+    """
+    if _g.articleList == []:
+        return _error("fetchPDF: no articles have been loaded")
+    if args == []:
+        return _error("fetchPDF: no references selected")
+
+    # no formats to process; just refnos
+    refnos = refMgmt.parseRefno(",".join(args))
+    # Check the returned values
+    ls = len(_g.articleList)
+    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
+        return _error("fetchPDF: invalid argument{} '{}' given".format(_p(args),
+                                                                       " ".join(args)))
+
+    # Check which ones need downloading
+    dois = []
+    for r in refnos:
+        doi = _g.articleList[r - 1]["doi"]
+        p = _g.currentPath.parent / "pdf" / (doi.replace('/','#') + ".pdf")
+        if not (p.exists() and p.is_file()):
+            dois.append(doi)
+        else:
+            print("fetchPDF: PDf for ref {} already in library".format(r))
+
+    yes, no = 0, 0
+    # Start the downloads!
+    if len(dois) > 0:
+        prog = _progress(len(dois))
+        spin = asyncio.create_task(_spinner("Obtaining URLs", prog))
+        results = []
+
+        # Each coroutine returns a 2-tuple; the first component is
+        # the doi, and the second is the URL if it didn't fail (or
+        # a _ret.FAILURE if it did).
+        coros = [refMgmt.getPDFURLFromDOI(doi, _g.ahSession) for doi in dois]
+        for coro in asyncio.as_completed(coros):
+            results.append(await coro)
+            prog.incr()
+        spin.cancel()
+        await asyncio.sleep(0)
+
+        for result in results:
+            if result[1] == _ret.FAILURE:
+                no += 1
+            else:
+                x = await refMgmt.savePDF(result[1], result[0], "pdf")
+                if x == _ret.FAILURE:
+                    no += 1
+                else:
+                    yes += 1
+
+    print("fetchPDF: {} PDFs successfully fetched, {} failed".format(yes, no))
     return _ret.SUCCESS
 
 
@@ -1291,8 +1392,9 @@ async def main():
     # MAIN TASKS
     # Start autosave task.
     t_autosave = asyncio.create_task(_autosave())
-    # Launch aiohttp session.
-    async with aiohttp.ClientSession(connector=_g.ahConnector) as ahSession:
+    # Launch aiohttp session with nice user-agent default header.
+    async with aiohttp.ClientSession(connector=_g.ahConnector,
+                                     headers=_g.httpHeaders) as ahSession:
         # ahSession only exists in this context manager block, so to avoid
         # having to pass it 1 million times through subroutines, we bind it
         # to a global variable first

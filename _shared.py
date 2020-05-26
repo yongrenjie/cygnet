@@ -48,10 +48,11 @@ class _g():
     articleListHistory = deque(maxlen=maxHistory)
     cmdHistory = deque(maxlen=maxHistory)
 
-    # Crossref identifying information.
-    crefHeaders = {"user-agent": "peeplatex/{}".format(versionNo) + \
-                                 "(https://github.com/yongrenjie/peeplatex," + \
-                                 " mailto:yongrenjie@gmail.com)"
+    # Default headers to use.
+    httpHeaders = {"user-agent": ("peeplatex/{} (https://github.com"
+                                  "/yongrenjie/peeplatex, mailto:"
+                                  "yongrenjie@gmail.com)".format(versionNo)),
+                   "mailto": "yongrenjie@gmail.com",
                    }
     # aiohttp maximum concurrent requests & objects
     ahMaxRequests = 20
@@ -168,7 +169,7 @@ class _progress():
         self.fstr = fstr
         self.current = 0
 
-    def incr(self, amount):
+    def incr(self, amount=1):
         self.current += amount
 
     def fmtCurrent(self):
