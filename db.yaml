@@ -1,125 +1,126 @@
 authors:
-- family: Glaser
-  given: S. J.
-doi: 10.1126/science.280.5362.421
-issue: 5362
-journalLong: Science
-journalShort: Science
-pages: 421-424
-timeAdded: 2020-05-25 06:13:38.835683+00:00
-timeOpened: 2020-05-26 17:50:32.286024+00:00
-title: 'Unitary Control in Quantum Ensembles: Maximizing Signal Intensity in Coherent
-  Spectroscopy'
-volume: 280
-year: 1998
----
-authors:
-- family: Schirhagl
-  given: Romana
-- family: Chang
-  given: Kevin
-- family: Loretz
-  given: Michael
-- family: Degen
-  given: Christian L.
-doi: 10.1146/annurev-physchem-040513-103659
-issue: 1
-journalLong: Annual Review of Physical Chemistry
-journalShort: Annu. Rev. Phys. Chem.
-pages: 83-105
-timeAdded: 2020-05-22 16:31:51.217252+00:00
-timeOpened: 2020-05-25 13:29:31.928443+00:00
-title: 'Nitrogen-Vacancy Centers in Diamond: Nanoscale Sensors for Physics and Biology'
-volume: 65
-year: 2014
----
-authors:
-- family: "Kup\u010De"
-  given: "\u0112riks"
-- family: Claridge
-  given: Tim D. W.
-doi: 10.1002/anie.201705506
-issue: 39
-journalLong: Angewandte Chemie International Edition
-journalShort: Angew. Chem. Int. Ed.
-pages: 11779-11783
-timeAdded: 2020-05-22 09:20:14.915945+00:00
-timeOpened: 2020-05-22 10:09:57.826548+00:00
-title: 'NOAH: NMR Supersequences for Small Molecule Analysis and Structure Elucidation'
-volume: 56
-year: 2017
----
-authors:
 - family: Foroozandeh
-  given: Mohammadali
-- family: Morris
-  given: Gareth A.
+  given: M.
+- family: Adams
+  given: R. W.
+- family: Kiraly
+  given: P.
 - family: Nilsson
-  given: Mathias
-doi: 10.1002/chem.201800524
-issue: 53
-journalLong: "Chemistry \u2013 A European Journal"
-journalShort: Chem. Eur. J.
-pages: 13988-14000
-timeAdded: 2020-05-22 09:20:20.036051+00:00
-timeOpened: 2020-05-22 10:09:55.876853+00:00
-title: PSYCHE Pure Shift NMR Spectroscopy
-volume: 24
-year: 2018
+  given: M.
+- family: Morris
+  given: G. A.
+doi: 10.1039/c5cc06293d
+issue: 84
+journalLong: Chemical Communications
+journalShort: Chem. Commun.
+pages: 15410-15413
+timeAdded: 2020-05-28 11:42:55.347051+00:00
+timeOpened: 2020-05-28 11:42:55.347055+00:00
+title: 'Measuring couplings in crowded NMR spectra: pure shift NMR with multiplet
+  analysis'
+volume: 51
+year: 2015
 ---
 authors:
-- family: Mansfield
-  given: Steven J.
-- family: Smith
-  given: Russell C.
-- family: Yong
-  given: Jonathan R. J.
-- family: Garry
-  given: Olivia L.
-- family: Anderson
-  given: Edward A.
-doi: 10.1021/acs.orglett.9b00971
+- family: Palmer
+  given: Melissa R.
+- family: Suiter
+  given: Christopher L.
+- family: Henry
+  given: Geneive E.
+- family: Rovnyak
+  given: James
+- family: Hoch
+  given: Jeffrey C.
+- family: Polenova
+  given: Tatyana
+- family: Rovnyak
+  given: David
+doi: 10.1021/jp5126415
+issue: 22
+journalLong: The Journal of Physical Chemistry B
+journalShort: J. Phys. Chem. B
+pages: 6502-6515
+timeAdded: 2020-05-28 11:42:58.316090+00:00
+timeOpened: 2020-05-28 11:42:58.316094+00:00
+title: Sensitivity of Nonuniform Sampling NMR
+volume: 119
+year: 2015
+---
+authors:
+- family: Power
+  given: J. E.
+- family: Foroozandeh
+  given: M.
+- family: Adams
+  given: R. W.
+- family: Nilsson
+  given: M.
+- family: Coombes
+  given: S. R.
+- family: Phillips
+  given: A. R.
+- family: Morris
+  given: G. A.
+doi: 10.1039/c5cc10206e
+issue: 14
+journalLong: Chemical Communications
+journalShort: Chem. Commun.
+pages: 2916-2919
+timeAdded: 2020-05-28 11:43:00.160268+00:00
+timeOpened: 2020-05-28 11:43:00.160272+00:00
+title: Increasing the quantitative bandwidth of NMR measurements
+volume: 52
+year: 2016
+---
+authors:
+- family: Fredi
+  given: "Andr\xE9"
+- family: Nolis
+  given: Pau
+- family: Cobas
+  given: Carlos
+- family: Parella
+  given: Teodor
+doi: 10.1016/j.jmr.2016.07.010
+issue: ''
+journalLong: Journal of Magnetic Resonance
+journalShort: J. Magn. Reson.
+pages: 161-168
+timeAdded: 2020-05-28 11:43:02.066414+00:00
+timeOpened: 2020-05-28 11:43:02.066419+00:00
+title: Access to experimentally infeasible spectra by pure-shift NMR covariance
+volume: 270
+year: 2016
+---
+authors:
+- family: Cornilescu
+  given: Gabriel
+- family: Ramos Alvarenga
+  given: "Ren\xE9 F."
+- family: Wyche
+  given: Thomas P.
+- family: Bugni
+  given: Tim S.
+- family: Gil
+  given: Roberto R.
+- family: Cornilescu
+  given: Claudia C.
+- family: Westler
+  given: William M.
+- family: Markley
+  given: John L.
+- family: Schwieters
+  given: Charles D.
+doi: 10.1021/acschembio.7b00281
 issue: 8
-journalLong: Organic Letters
-journalShort: Org. Lett.
-pages: 2918-2922
-timeAdded: 2020-05-25 05:59:48.780875+00:00
-timeOpened: 2020-05-25 19:30:56.982571+00:00
-title: A General Copper-Catalyzed Synthesis of Ynamides from 1,2-Dichloroenamides
-volume: 21
-year: 2019
----
-authors:
-- family: Suomivuori
-  given: Carl-Mikael
-- family: Latorraca
-  given: Naomi R.
-- family: Wingler
-  given: Laura M.
-- family: Eismann
-  given: Stephan
-- family: King
-  given: Matthew C.
-- family: Kleinhenz
-  given: Alissa L. W.
-- family: Skiba
-  given: Meredith A.
-- family: Staus
-  given: Dean P.
-- family: Kruse
-  given: Andrew C.
-- family: Lefkowitz
-  given: Robert J.
-- family: Dror
-  given: Ron O.
-doi: 10.1126/science.aaz0326
-issue: 6480
-journalLong: Science
-journalShort: Science
-pages: 881-887
-timeAdded: 2020-05-26 18:05:00.724448+00:00
-timeOpened: 2020-05-26 18:05:00.724454+00:00
-title: "Molecular mechanism of biased signaling in a prototypical G protein\u2013\
-  coupled receptor"
-volume: 367
-year: 2020
+journalLong: ACS Chemical Biology
+journalShort: ACS Chem. Biol.
+pages: 2157-2163
+timeAdded: 2020-05-28 11:43:03.744210+00:00
+timeOpened: 2020-05-28 11:43:03.744214+00:00
+title: 'Progressive Stereo Locking (PSL): A Residual Dipolar Coupling Based Force
+  Field Method for Determining the Relative Configuration of Natural Products and
+  Other Small Molecules'
+volume: 12
+year: 2017

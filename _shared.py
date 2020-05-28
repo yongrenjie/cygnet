@@ -1,3 +1,8 @@
+__all__ = ["_g", "_ret", "_progress", "_spinner",
+           "_helpdeco", "_asynchelpdeco", "_timedeco", "_asynctimedeco",
+           "_error", "_debug", "_p",
+           "_copy", "_saveHist", "_clearHist", "_undo",
+           ]
 """
 This module stores all the global variables (state variables) as well
 as some useful constants.
@@ -144,6 +149,7 @@ class _g():
         "Journal of Magnetic Resonance, Series A": "J. Magn. Reson., Ser. A",
         "Journal of Magnetic Resonance, Series B": "J. Magn. Reson., Ser. B",
         "J Biomol NMR": "J. Biomol. NMR",
+        "Annual Reports on NMR Spectroscopy": "Annu. Rep. NMR Spectrosc.",
         }
 
     # Dictionary containing short forms for common terms in journal names, which can be
