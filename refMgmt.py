@@ -157,11 +157,17 @@ async def savePDF(path, doi, fmt):
 
     # Construct the destination path (where the PDF should be saved to).
     pdest = _g.currentPath.parent / fmt / (doi.replace('/','#') + ".pdf")
+    # mkdir -p the folder if it doesn't already exist.
+    if not pdest.parent.exists():
+        pdest.parent.mkdir(parents=True)
 
     if type == "file":
         # Process and check source path. Note that dragging-and-dropping
         # into the terminal gives us escaped spaces, hence the replace().
-        psrc = Path(str(path).replace("\ "," ").strip())
+        psrc = str(path).replace("\\ "," ").strip()
+        for escapedChar, char in _g.pathEscapes:
+            psrc = psrc.replace(escapedChar, char)
+        psrc = Path(psrc)
         if not psrc.is_file():
             return _error("savePDF: file {} not found".format(psrc))
         else:
@@ -169,7 +175,7 @@ async def savePDF(path, doi, fmt):
                 proc = subprocess.run(["cp", str(psrc), str(pdest)],
                                       check=True)
             except subprocess.CalledProcessError:
-                return _error("savePDF: file {} could not be copied"
+                return _error("savePDF: file {} could not be copied "
                               "to {}".format(psrc, pdest))
             else:
                 return _ret.SUCCESS
@@ -183,10 +189,29 @@ async def savePDF(path, doi, fmt):
                     return _error("savePDF: URL '{}' returned "
                                   "{} ({})".format(psrc, resp.status,
                                                    resp.reason))
-                # Check if content-type is really a PDF.
+                # Check if Elsevier is trying to redirect us.
+                if "sciencedirect" in psrc and resp.content_type == "text/html":
+                    # e = resp.get_encoding()
+                    redirectRegex = re.compile(r"""window.location\s*=\s*'(https?://.+)';""")
+                    text = await resp.text()
+                    for line in text.split("\n"):
+                        match = redirectRegex.search(line)
+                        if match:
+                            newurl = match.group(1)
+                            _debug("Redirected by Elsevier, trying to fetch PDF from new URL")
+                            newSave = asyncio.create_task(savePDF(newurl, doi, fmt))
+                            await asyncio.wait([newSave])
+                            return newSave.result()
+                elif "wiley" in psrc and resp.content_type == "text/html":
+                    text = await resp.text()
+                    for line in text.split("\n"):
+                        print(line)
+                    return _error("screw wiley")
+                # Otherwise, check if we are actually getting a PDF
                 if "application/pdf" not in resp.content_type:
                     return _error("savePDF: URL '{}' returned content-type "
                                   "'{}'".format(psrc, resp.content_type))
+
                 # OK, so by now we are pretty sure we have a working link to a
                 # PDF. Try to get the file size.
                 filesize = None
@@ -335,7 +360,13 @@ async def DOIToMetadata(doi, session):
         if a["journalShort"] in _g.journalReplacements:
             a["journalShort"] = _g.journalReplacements[a["journalShort"]]
 
+        # Process title
         a["title"] = d["title"][0]
+        # Convert Greek letters in ACS titles to their Unicode equivalents
+        for i in _g.greek2Unicode.keys():
+            if ".{}.".format(i) in a["title"]:
+                a["title"] = a["title"].replace(".{}.".format(i), _g.greek2Unicode[i])
+
         try:
             a["volume"] = int(d["volume"])
         except KeyError:   # no volume
@@ -483,16 +514,18 @@ async def DOIToFullPDFURL(doi, session):
         'elsevier': [re.compile(r"""<input type="hidden" name="redirectURL" value="https%3A%2F%2Fwww.sciencedirect.com%2Fscience%2Farticle%2Fpii%2F(.+?)%3Fvia%253Dihub" id="redirectURL"/>"""), ""],
         'tandf': [re.compile(r"""<meta name=["']dc.Publisher["']\s+content=["'](.+?)["']\s*/?>"""), "Taylor"],
         'annrev': [re.compile(r"""<meta name=["']dc.Publisher["']\s+content=["'](.+?)["']\s*/?>"""), "Annual Reviews"],
+        'rsc': [re.compile(r"""<meta content=["']https://pubs.rsc.org/en/content/articlepdf/(.+?)["']\s+name="citation_pdf_url"\s*/>"""), ""],
     }
     publisherFmtStrings = {
         "acs": "https://pubs.acs.org/doi/pdf/{}",
-        "wiley": "https://onlinelibrary.wiley.com/doi/pdf/{}",
+        "wiley": "https://onlinelibrary.wiley.com/doi/pdfdirect/{}",
         "elsevier": "https://www.sciencedirect.com/science/article/pii/{}/pdfft",
         "nature": "https://www.nature.com/articles/{}.pdf",
         "science": "https://science.sciencemag.org/content/sci/{}.full.pdf",
         "springer": "https://link.springer.com/content/pdf/{}.pdf",
         "tandf": "https://www.tandfonline.com/doi/pdf/{}",
         "annrev": "https://www.annualreviews.org/doi/pdf/{}",
+        "rsc": "https://pubs.rsc.org/en/content/articlepdf/{}",
     }
 
     try:
@@ -501,28 +534,28 @@ async def DOIToFullPDFURL(doi, session):
                 return _error("DOIToFullPDFURL: URL '{}' returned "
                               "{} ({})".format(psrc, resp.status, resp.reason))
             # Shortcut for ACS, don't need to read content
-            if "Set-Cookie" in resp.headers and "pubs.acs.org" in resp.headers["Set-Cookie"]:
+            if any("pubs.acs.org" in h for h in resp.headers.getall("Set-Cookie", [])):
                 publisher = "acs"
                 identifier = doi
                 raise _PublisherFound
             # Shortcut for Nature, don't need to read content
-            elif "X-Forwarded-Host" in resp.headers and "www.nature.com" in resp.headers["X-Forwarded-Host"]:
+            elif any("www.nature.com" in h for h in resp.headers.getall("X-Forwarded-Host", [])):
                 publisher = "nature"
                 identifier = doi.split('/', maxsplit=1)[1]
                 raise _PublisherFound
             # Shortcut for Science, don't need to read content.
             # Note that this doesn't work for Sci Advances
-            elif "Link" in resp.headers and "science.sciencemag.org" in resp.headers["Link"]:
+            elif any("science.sciencemag.org" in h for h in resp.headers.getall("Link", [])):
                 publisher = "science"
                 identifier = resp.headers["Link"].split(">")[0].split("/content/")[1]
                 raise _PublisherFound
             # Shortcut for Springer
-            elif "Set-Cookie" in resp.headers and ".springer.com" in resp.headers["Set-Cookie"]:
+            elif any(".springer.com" in h for h in resp.headers.getall("Set-Cookie", [])):
                 publisher = "springer"
                 identifier = doi
                 raise _PublisherFound
             # Shortcut for Taylor and Francis
-            elif "Set-Cookie" in resp.headers and ".tandfonline.com" in resp.headers["Set-Cookie"]:
+            elif any(".tandfonline.com" in h for h in resp.headers.getall("Set-Cookie", [])):
                 publisher = "tandf"
                 identifier = doi
                 raise _PublisherFound
@@ -540,6 +573,8 @@ async def DOIToFullPDFURL(doi, session):
                                 identifier = doi
                             elif publisher in ["elsevier"]:
                                 identifier = match.group(1)
+                            elif publisher in ["rsc"]:
+                                identifier = match.group(1)
                             raise _PublisherFound
     except (aiohttp.client_exceptions.ContentTypeError,
             aiohttp.client_exceptions.InvalidURL,
@@ -550,5 +585,4 @@ async def DOIToFullPDFURL(doi, session):
         return (doi, publisherFmtStrings[publisher].format(identifier))
     else:
         return (doi, _error("DOIToFullPDFURL: could not find full text for doi {}".format(doi)))
-
 

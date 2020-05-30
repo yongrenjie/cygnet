@@ -1,126 +1,16 @@
 authors:
-- family: Foroozandeh
-  given: M.
-- family: Adams
-  given: R. W.
-- family: Kiraly
-  given: P.
-- family: Nilsson
-  given: M.
-- family: Morris
-  given: G. A.
-doi: 10.1039/c5cc06293d
-issue: 84
-journalLong: Chemical Communications
-journalShort: Chem. Commun.
-pages: 15410-15413
-timeAdded: 2020-05-28 11:42:55.347051+00:00
-timeOpened: 2020-05-28 11:42:55.347055+00:00
-title: 'Measuring couplings in crowded NMR spectra: pure shift NMR with multiplet
-  analysis'
-volume: 51
-year: 2015
----
-authors:
-- family: Palmer
-  given: Melissa R.
-- family: Suiter
-  given: Christopher L.
-- family: Henry
-  given: Geneive E.
-- family: Rovnyak
-  given: James
-- family: Hoch
-  given: Jeffrey C.
-- family: Polenova
-  given: Tatyana
-- family: Rovnyak
-  given: David
-doi: 10.1021/jp5126415
-issue: 22
-journalLong: The Journal of Physical Chemistry B
-journalShort: J. Phys. Chem. B
-pages: 6502-6515
-timeAdded: 2020-05-28 11:42:58.316090+00:00
-timeOpened: 2020-05-28 11:42:58.316094+00:00
-title: Sensitivity of Nonuniform Sampling NMR
-volume: 119
-year: 2015
----
-authors:
-- family: Power
-  given: J. E.
-- family: Foroozandeh
-  given: M.
-- family: Adams
-  given: R. W.
-- family: Nilsson
-  given: M.
-- family: Coombes
-  given: S. R.
-- family: Phillips
-  given: A. R.
-- family: Morris
-  given: G. A.
-doi: 10.1039/c5cc10206e
-issue: 14
-journalLong: Chemical Communications
-journalShort: Chem. Commun.
-pages: 2916-2919
-timeAdded: 2020-05-28 11:43:00.160268+00:00
-timeOpened: 2020-05-28 11:43:00.160272+00:00
-title: Increasing the quantitative bandwidth of NMR measurements
-volume: 52
-year: 2016
----
-authors:
-- family: Fredi
-  given: "Andr\xE9"
-- family: Nolis
-  given: Pau
-- family: Cobas
-  given: Carlos
-- family: Parella
-  given: Teodor
-doi: 10.1016/j.jmr.2016.07.010
-issue: ''
-journalLong: Journal of Magnetic Resonance
-journalShort: J. Magn. Reson.
-pages: 161-168
-timeAdded: 2020-05-28 11:43:02.066414+00:00
-timeOpened: 2020-05-28 11:43:02.066419+00:00
-title: Access to experimentally infeasible spectra by pure-shift NMR covariance
-volume: 270
-year: 2016
----
-authors:
-- family: Cornilescu
-  given: Gabriel
-- family: Ramos Alvarenga
-  given: "Ren\xE9 F."
-- family: Wyche
-  given: Thomas P.
-- family: Bugni
-  given: Tim S.
-- family: Gil
-  given: Roberto R.
-- family: Cornilescu
-  given: Claudia C.
-- family: Westler
-  given: William M.
-- family: Markley
-  given: John L.
-- family: Schwieters
-  given: Charles D.
-doi: 10.1021/acschembio.7b00281
-issue: 8
-journalLong: ACS Chemical Biology
-journalShort: ACS Chem. Biol.
-pages: 2157-2163
-timeAdded: 2020-05-28 11:43:03.744210+00:00
-timeOpened: 2020-05-28 11:43:03.744214+00:00
-title: 'Progressive Stereo Locking (PSL): A Residual Dipolar Coupling Based Force
-  Field Method for Determining the Relative Configuration of Natural Products and
-  Other Small Molecules'
-volume: 12
-year: 2017
+- family: Grzesiek
+  given: Stephan
+- family: Bax
+  given: Ad
+doi: 10.1021/ja00079a052
+issue: 26
+journalLong: Journal of the American Chemical Society
+journalShort: J. Am. Chem. Soc.
+pages: 12593-12594
+timeAdded: 2020-05-29 12:51:08.472834+00:00
+timeOpened: 2020-05-29 12:51:13.026900+00:00
+title: The importance of not saturating water in protein NMR. Application to sensitivity
+  enhancement and NOE measurements
+volume: 115
+year: 1993

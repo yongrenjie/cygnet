@@ -82,7 +82,8 @@ class peepPrompt():
                     # escaped spaces, apart from file names.
                     line = [l.replace("\\ ", " ") for l in line]
                     # Replace other escaped characters.
-                    line = [l.replace("\\,", ",") for l in line]
+                    for escapedChar, char in _g.pathEscapes:
+                        line = [l.replace(escapedChar, char) for l in line]
                     # Skip empty lines.
                     if "".join(line) == "":
                         continue
@@ -269,8 +270,8 @@ def read(args=Path.cwd(), silent=False):
             if not silent:
                 print("read: reading library {}... ".format(fname))
             try:
-                _g.articleList = list(yaml.safe_load_all(fp))
-                _clearHist()  # clear the history!
+                # don't overwrite the global first...
+                newArticles = list(yaml.safe_load_all(fp))
             except yaml.YAMLError:
                 return _error("read: invalid YAML file {}".format(fname))
             if not silent:
@@ -278,6 +279,11 @@ def read(args=Path.cwd(), silent=False):
     except FileNotFoundError:  # seems redundant, but ok
         return _error("read: file {} not found".format(fname))
     else:
+        ### At this point no more errors are expected, we can set the globals.
+        # Clear history.
+        _clearHist()
+        # Set articles.
+        _g.articleList = newArticles
         # Backup the new article list before doing anything, but only if
         #  it's really a new article...
         if fname != _g.currentPath:
@@ -340,6 +346,8 @@ def write(args=None, silent=False):
             if not silent:
                 print("write: writing current library to {}... ".format(fname))
             yaml.dump_all(_g.articleList, fp)
+            if _g.currentPath is None:
+                _g.currentPath = fname
             _g.changes = []
             if not silent:
                 print("write: done")
@@ -802,7 +810,7 @@ def sortArticleList(args=None):
         Return codes as defined in _ret.
     """
     # Argument processing
-    if args is None or args[0] == "":
+    if args is None or args == [] or args[0] == "":
         mode, reverse = _g.sortMode, _g.sortReverse
     else:
         # Pick out capital letter, then convert to lowercase
@@ -1073,8 +1081,6 @@ async def importPDF(args=None):
         else:
             _error("importPDF: invalid path '{}' provided".format(arg))
 
-    print(paths)
-
     yes, no = 0, 0
     # Process every PDF file found.
     for path in paths:
@@ -1083,7 +1089,7 @@ async def importPDF(args=None):
         if doi == _ret.FAILURE:
             no += 1
         else:
-            print("importPDF: detected DOI {} for PDF '{}'".format(doi, p))
+            print("importPDF: detected DOI {} for PDF '{}'".format(doi, path))
             # Check whether it's already in the database
             for refno, a in enumerate(_g.articleList, start=1):
                 if doi == a["doi"]:

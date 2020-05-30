@@ -53,10 +53,8 @@ class _g():
     articleListHistory = deque(maxlen=maxHistory)
     cmdHistory = deque(maxlen=maxHistory)
 
-    # Default headers to use.
-    httpHeaders = {"user-agent": ("peeplatex/{} (https://github.com"
-                                  "/yongrenjie/peeplatex, mailto:"
-                                  "yongrenjie@gmail.com)".format(versionNo)),
+    # Default headers to use
+    httpHeaders = {"user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36",
                    "mailto": "yongrenjie@gmail.com",
                    }
     # aiohttp maximum concurrent requests & objects
@@ -136,6 +134,22 @@ class _g():
         '\u2014': '---',
     }
 
+    # Convert Greek letters to Unicode.
+    greek2Unicode = {
+        "Alpha": "\u0391", "Beta": "\u0392", "Gamma": "\u0393", "Delta": "\u0394",
+        "Epsilon": "\u0395", "Zeta": "\u0396", "Eta": "\u0397", "Theta": "\u0398",
+        "Iota": "\u0399", "Kappa": "\u039A", "Lamda": "\u039B", "Mu": "\u039C",
+        "Nu": "\u039D", "Xi": "\u039E", "Omicron": "\u039F", "Pi": "\u03A0",
+        "Rho": "\u03A1", "Sigma": "\u03A3", "Tau": "\u03A4", "Upsilon": "\u03A5",
+        "Phi": "\u03A6", "Chi": "\u03A7", "Psi": "\u03A8", "Omega": "\u03A9",
+        "alpha": "\u03B1", "beta": "\u03B2", "gamma": "\u03B3", "delta": "\u03B4",
+        "epsilon": "\u03B5", "zeta": "\u03B6", "eta": "\u03B7", "theta": "\u03B8",
+        "iota": "\u03B9", "kappa": "\u03BA", "lamda": "\u03BB", "mu": "\u03BC",
+        "nu": "\u03BD", "xi": "\u03BE", "omicron": "\u03BF", "pi": "\u03C0",
+        "rho": "\u03C1", "sigma": "\u03C3", "tau": "\u03C4", "upsilon": "\u03C5",
+        "phi": "\u03C6", "chi": "\u03C7", "psi": "\u03C8", "omega": "\u03C9",
+    }
+
     # Dictionary containing correct (as listed in CASSI) abbreviations of some journals.
     journalReplacements = {
         "Proceedings of the National Academy of Sciences": "Proc. Acad. Natl. Sci. U. S. A.",
@@ -150,6 +164,7 @@ class _g():
         "Journal of Magnetic Resonance, Series B": "J. Magn. Reson., Ser. B",
         "J Biomol NMR": "J. Biomol. NMR",
         "Annual Reports on NMR Spectroscopy": "Annu. Rep. NMR Spectrosc.",
+        "Angewandte Chemie International Edition": "Angew. Chem. Int. Ed.",
         }
 
     # Dictionary containing short forms for common terms in journal names, which can be
@@ -157,6 +172,11 @@ class _g():
     #  in principle we can expand this in future.
     jNameAbbrevs = {
         "Nucl Magn Reson": "NMR",
+    }
+
+    # Dictionary of escaped characters in paths.
+    pathEscapes = {
+        "\\ ": " ", "\\,": ",", "\\'": "'", '\\"': '"',
     }
 
 
