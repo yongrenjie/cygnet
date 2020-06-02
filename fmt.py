@@ -57,6 +57,6 @@ def fmtJournalShort(jname):
     This mainly works by stripping periods, but there are also some useful acronyms.
     """
     jname = jname.replace(".", "")
-    for long, short in _g.jNameAbbrevs.items():
-        jname = jname.replace(long, short)
+    for longName, shortName in _g.jNameAbbrevs.items():
+        jname = jname.replace(longName, shortName)
     return jname
