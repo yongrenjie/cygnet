@@ -82,10 +82,11 @@ class _g():
     # Colours for various stuff. Names should be self-explanatory.
     def a(col):
         return "\033[38;5;{}m".format(col)
-    ptPink  = "#f589d1" if darkmode else "#8629ab"
-    ptGreen = "#17cf48" if darkmode else "#2a731f"
-    ptBlue  = "#45c6ed" if darkmode else "#3344de"
-    ptRed   = "#f53d50" if darkmode else "#b00718"
+    ptPurple  = "#e4b3ff" if darkmode else "#940172"
+    ptPink    = "#f589d1" if darkmode else "#8629ab"
+    ptGreen   = "#17cf48" if darkmode else "#2a731f"
+    ptBlue    = "#45c6ed" if darkmode else "#3344de"
+    ptRed     = "#f53d50" if darkmode else "#b00718"
     ansiErrorRed    = a(196)
     ansiErrorText   = a(210) if darkmode else a(88)
     ansiDiffRed     = a(203) if darkmode else a(125)

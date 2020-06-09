@@ -395,27 +395,41 @@ def MetadataToCitation(article, fmt):
     # Markdown short & long
     elif fmt == 'm':
         a["pages"] = a["pages"].replace('-','\u2013')   # en dash for page number
-        if "issue" in a:
+        if "issue" in a and a["issue"]:
             return "*{}* **{}**, *{}* ({}), {}. [DOI: {}](https://doi.org/{}).".format(
                 a["journalShort"], a["year"], a["volume"],
-                a["issue"], a["pages"], a["doi"], a["doi"]
+                a["issue"], a["pages"].replace("-","\u2013"), a["doi"], a["doi"]
             )
         else:
             return "*{}* **{}**, *{},* {}. [DOI: {}](https://doi.org/{}).".format(
                 a["journalShort"], a["year"], a["volume"],
-                a["pages"], a["doi"], a["doi"]
+                a["pages"].replace("-","\u2013"), a["doi"], a["doi"]
             )
     elif fmt == 'M':
         authorString = "; ".join((fmtAuthor(auth, "acs") for auth in a["authors"]))
-        if "issue" in a:
+        if "issue" in a and a["issue"]:
             return "{} {}. *{}* **{}**, *{}* ({}), {}. [DOI: {}](https://doi.org/{}).".format(
                 authorString, a["title"], a["journalShort"], a["year"], a["volume"],
-                a["issue"], a["pages"], a["doi"], a["doi"]
+                a["issue"], a["pages"].replace("-","\u2013"), a["doi"], a["doi"]
             )
         else:
             return "{} {}. *{}* **{}**, *{},* {}. [DOI: {}](https://doi.org/{}).".format(
                 authorString, a["title"], a["journalShort"], a["year"], a["volume"],
-                a["pages"], a["doi"], a["doi"]
+                a["pages"].replace("-","\u2013"), a["doi"], a["doi"]
+            )
+
+    # Word
+    elif fmt == 'w':
+        authorString = "; ".join((fmtAuthor(auth, "acs") for auth in a["authors"]))
+        if "issue" in a and a["issue"]:
+            return "{} {} {}, {} ({}), {}.".format(
+                authorString, a["journalShort"], a["year"], a["volume"],
+                a["issue"], a["pages"].replace("-","\u2013")
+            )
+        else:
+            return "{} {} {}, {}, {}.".format(
+                authorString, a["journalShort"], a["year"], a["volume"],
+                a["pages"].replace("-","\u2013")
             )
 
     # BibLaTeX
@@ -433,7 +447,7 @@ def MetadataToCitation(article, fmt):
             "    title = {{{}}},\n".format(unicode2Latex(a["title"])) + \
             "    year = {{{}}},\n".format(a["year"]) + \
             ("    volume = {{{}}},\n".format(a["volume"]) if "volume" in a else "") + \
-            ("    issue = {{{}}},\n".format(a["issue"]) if "issue" in a else "") + \
+            ("    issue = {{{}}},\n".format(a["issue"]) if "issue" in a and a["issue"] else "") + \
             ("    pages = {{{}}},\n".format(a["pages"]) if "pages" in a else "").replace("-","--") + \
             "}"
         return s

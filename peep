@@ -26,11 +26,21 @@ class peepPrompt():
     """
     Interactive prompt.
     """
+
     style = pt.styles.Style.from_dict({
-        "prompt": "{} italic".format(_g.ptPink),
-        ""      : _g.ptGreen,
+        "path" : "{}".format(_g.ptPurple),
+        "peep" : "{} bold italic".format(_g.ptPink),
+        ""     : _g.ptGreen,
     })
-    message = [("class:prompt", "peep > ")]
+    def message(self):
+        # Construct nice form of _g.currentPath..
+        path = str(_g.currentPath.parent) if _g.currentPath is not None else ""
+        path = path.replace(str(Path.home()), "~")
+        path = "({}) ".format(path) if path else ""
+        msg = [("class:path"  , path),
+               ("class:peep", "peep > ")]
+        return msg
+
     commentSymbol = '#'
     session = pt.PromptSession()
 
@@ -63,7 +73,7 @@ class peepPrompt():
         with pt.patch_stdout.patch_stdout():
             while True:
                 try:
-                    line = await self.session.prompt_async(self.message,
+                    line = await self.session.prompt_async(self.message(),
                                                            style=self.style)
                 except KeyboardInterrupt:
                     continue
@@ -89,7 +99,10 @@ class peepPrompt():
                         continue
                     # Separate into command + arguments.
                     cmd, args = line[0], line[1:]
-                    cmd = cmd.lstrip(":")   # I have typed in :q more than once
+                    # Remove empty arguments.
+                    args = [a for a in args if a]
+                    # I have typed in :q more than once
+                    cmd = cmd.lstrip(":")
 
                     # Look for help command. If so, remove help from the command,
                     # and delegate to the actual command which will print its
@@ -206,7 +219,7 @@ class peepPrompt():
 
 @_helpdeco
 @_timedeco
-def read(args=Path.cwd(), silent=False):
+def read(args=None, silent=False):
     """
     Usage: r[ead] [path_to_file]
 
@@ -242,6 +255,12 @@ def read(args=Path.cwd(), silent=False):
         p = Path(args)
     except TypeError:   # not castable
         return _error("read: invalid argument '{}'".format(args))
+    else:
+        # if p is not an absolute path, we want to resolve it with respect
+        # to _g.currentPath. If that is None, we fall back to Path.cwd().
+        if not p.is_absolute():
+            p = (_g.currentPath.parent if _g.currentPath is not None \
+                 else Path.cwd()) / p
 
     # If it points to an existing directory, load db.yaml from there
     if p.is_dir() and p.exists():
@@ -594,7 +613,8 @@ async def cite(args):
     abbrevs = {"d": "doi",
                "b": "bib",
                "m": "markdown",
-               "M": "Markdown"}
+               "M": "Markdown",
+               "w": "word"}
     refnos, formats = refMgmt.parseRefnoFormat(args, abbrevs=abbrevs)
 
     # Check the returned values
@@ -725,6 +745,8 @@ async def addRef(args):
             no += 1
         else:
             dois.append(doi)
+    if dois == []:
+        return
 
     # create spinner
     prog = _progress(len(dois))
@@ -1453,7 +1475,7 @@ def backup():
     else:
         _debug("backup: failed to back up articleList "
                "(length {}) with currentPath '{}'".format(len(_g.articleList),
-                                                          _g.current))
+                                                          _g.currentPath))
 
 
 #############################################################################
