@@ -7,6 +7,7 @@ import re
 import sys
 import subprocess
 import asyncio
+from unicodedata import normalize
 from pathlib import Path
 from copy import deepcopy
 
@@ -332,9 +333,10 @@ async def DOIToMetadata(doi, session):
         d = d["message"]    # avoid repeating this subscript many times
         a = {}
         a["doi"] = doi
-        # Minor hack to convert 'J.R.J.' to 'J. R. J.'
-        a["authors"] = [{"family": auth["family"],
-                         "given": auth["given"].replace(". ", ".").replace(".",". ").rstrip()}
+        # Minor hack to convert 'J.R.J.' to 'J. R. J.'.
+        # The alternative involves re.split(), I think that's overkill.
+        a["authors"] = [{"family": normalize("NFKC", auth["family"]),
+                         "given": normalize("NFKC", auth["given"].replace(". ", ".").replace(".",". ").rstrip())}
                         for auth in d["author"]]
         a["year"] = int(d["published-print"]["date-parts"][0][0]) \
             if "published-print" in d \
