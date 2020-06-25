@@ -1485,7 +1485,10 @@ async def main():
     # STARTUP CODE
 
     # Resize terminal
-    # sys.stdout.write("\x1b[8;{rows};{cols}t".format(rows=32, cols=100))
+    cols, rows = os.get_terminal_size()
+    cols = max(cols, 175)
+    rows = max(rows, 50)
+    sys.stdout.write(f"\x1b[8;{rows};{cols}t")
 
     # Parse sys.argv
     parser = argparse.ArgumentParser()
