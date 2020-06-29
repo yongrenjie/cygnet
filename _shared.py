@@ -40,10 +40,11 @@ class _g():
     # Default method of sorting, to be performed when loading a file.
     #  This can be overridden during programme usage, so can also act
     #  as the "current" method of sorting".
-    sortMode = "yja"     # Year, journal, author
+    sortMode = "timeAdded"
     sortReverse = False  # Oldest to newest
     sortKey = {"yja": (lambda a: (a["year"], a["journalLong"],
                                     a["authors"][0]["family"])),
+               # that's year-journal-author.
                "timeOpened": itemgetter("timeOpened"),
                "timeAdded": itemgetter("timeAdded"),
                }
@@ -208,7 +209,6 @@ class _progress():
         return self.fstr.format(self.total) \
             if self.fstr is not None \
             else self.total
-
 
 
 async def _spinner(message, prog=None, units=""):
