@@ -1,4 +1,4 @@
-from _shared import *
+from ._shared import *
 
 
 """

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import os
 import sys
 import subprocess
@@ -17,9 +15,9 @@ import yaml
 import aiohttp
 import prompt_toolkit as pt
 
-import refMgmt
-import listPrint
-from _shared import *
+from . import refMgmt
+from . import listPrint
+from ._shared import *
 
 
 class peepPrompt():
@@ -1481,9 +1479,41 @@ def backup():
 #############################################################################
 #### Main coroutine.
 
-async def main():
-    # STARTUP CODE
+async def main_coro():
+    """
+    Main coroutine.
+    """
+    # Start autosave task
+    t_autosave = asyncio.create_task(_autosave())
 
+    # Launch aiohttp session with nice user-agent default header.
+    async with aiohttp.ClientSession(connector=_g.ahConnector,
+                                     headers=_g.httpHeaders) as ahSession:
+        # ahSession only exists in this context manager block, so to avoid
+        # having to pass it 1 million times through subroutines, we bind it
+        # to a global variable first
+        _g.ahSession = ahSession
+        # Start the REPL
+        pmt = peepPrompt()
+        pmtloop = await pmt.loop()
+
+    # Shutdown code
+    print("Exiting... zzzpeep")
+    # Stop autosave
+    t_autosave.cancel()
+    # prompt_toolkit bug if you spam commands like crazy
+    count = 0
+    for t in asyncio.all_tasks():
+        if "wait_for_timeout()" in repr(t):
+            count += 1
+            t.cancel()
+    _debug("{} timeout tasks cancelled.".format(count))
+
+
+def main():
+    """
+    Run the main coroutine.
+    """
     # Resize terminal
     cols, rows = os.get_terminal_size()
     cols = max(cols, 175)
@@ -1503,42 +1533,18 @@ async def main():
     if _g.debug:
         _debug("Debugging mode enabled.")
 
-    # Read in the file. This automatically starts a backup.
+    # Read in the file specified in argv. This automatically performs a backup.
     infile = Path(args.db).resolve().expanduser() if args.db else Path.cwd()
     if infile.exists() and infile.is_dir():
         infile = infile / "db.yaml"
     if infile.exists() and infile.is_file():
         read(infile)
 
-    # MAIN TASKS
-    # Start autosave task.
-    t_autosave = asyncio.create_task(_autosave())
-    # Launch aiohttp session with nice user-agent default header.
-    async with aiohttp.ClientSession(connector=_g.ahConnector,
-                                     headers=_g.httpHeaders) as ahSession:
-        # ahSession only exists in this context manager block, so to avoid
-        # having to pass it 1 million times through subroutines, we bind it
-        # to a global variable first
-        _g.ahSession = ahSession
-        # Start the REPL
-        pmt = peepPrompt()
-        pmtloop = await pmt.loop()
-
-    # SHUTDOWN CODE
-    # Be cute
-    print("Exiting... zzzpeep")
-    # Stop autosave
-    t_autosave.cancel()
-    # prompt_toolkit bug if you spam commands like crazy
-    count = 0
-    for t in asyncio.all_tasks():
-        if "wait_for_timeout()" in repr(t):
-            count += 1
-            t.cancel()
-    _debug("{} timeout tasks cancelled.".format(count))
+    # Run main coroutine until complete
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main_coro())
+    loop.close()
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
-    loop.close()
+    main()

@@ -1,0 +1,7 @@
+README.md
+setup.py
+peeplatex.egg-info/PKG-INFO
+peeplatex.egg-info/SOURCES.txt
+peeplatex.egg-info/dependency_links.txt
+peeplatex.egg-info/entry_points.txt
+peeplatex.egg-info/top_level.txt

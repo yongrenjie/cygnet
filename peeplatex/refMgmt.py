@@ -14,8 +14,8 @@ from copy import deepcopy
 import aiohttp
 from unidecode import unidecode
 
-from fmt import fmtAuthor
-from _shared import *
+from .fmt import fmtAuthor
+from ._shared import *
 
 
 def parseRefnoFormat(args, abbrevs=None):

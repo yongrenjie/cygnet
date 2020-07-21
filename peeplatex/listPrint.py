@@ -5,8 +5,8 @@ This module provides tools for printing of lists and article information.
 
 import os
 
-from _shared import *
-from fmt import (fmtAuthor, fmtVolInfo, fmtJournalShort)
+from ._shared import *
+from .fmt import (fmtAuthor, fmtVolInfo, fmtJournalShort)
 
 
 def printListHead(layout_str, fss):
