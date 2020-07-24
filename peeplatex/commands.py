@@ -11,14 +11,9 @@ import prompt_toolkit as pt
 
 from . import refMgmt
 from . import listPrint
+from . import backup
 from ._shared import *
 
-
-
-#############################################################################
-#### Functions which (generally) parse prompt input, perform error checking,
-#### and dispatch to specialised methods. Some are smart enough to be called
-#### from outside the prompt, too.
 
 @_helpdeco
 @_timedeco
@@ -107,10 +102,10 @@ def read(args=None, silent=False):
         # Set articles.
         _g.articleList = newArticles
         # Backup the new article list before doing anything, but only if
-        #  it's really a new article...
+        # it's really a new article...
         if fname != _g.currentPath:
             _g.currentPath = fname
-            backup()
+            backup.createBackup()
         # Then sort the list in place (which will trigger autosave)
         sortArticleList()
 

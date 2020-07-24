@@ -28,6 +28,6 @@ setuptools.setup(
     ],
     # Entry points (command-line)
     entry_points = {
-        'console_scripts': ['peep=peeplatex.peep:main'],
+        'console_scripts': ['peep=peeplatex.main:main'],
     }
 )

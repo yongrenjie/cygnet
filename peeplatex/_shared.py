@@ -20,8 +20,9 @@ from pathlib import Path
 from functools import wraps
 from time import time
 from copy import deepcopy
-from operator import itemgetter
+from operator import itemgetter, attrgetter
 from collections import deque
+
 
 import aiohttp
 
@@ -63,13 +64,8 @@ class _g():
     ahConnector = aiohttp.TCPConnector(limit=ahMaxRequests)
     ahSession = None   # this is set in main()
 
-    # Debugging mode on/off
-    debug = True
-    # Maximum number of backups to keep
-    maxBackups = 5
-    # Time interval for autosave (seconds). Note that this doesn't actually
-    #  save unless changes have been made, i.e. changes > 0.
-    autosaveInterval = 1
+    # Debugging mode on/off. This is set by argv
+    debug = None
 
     # Check for Dark Mode (OS X)
     darkmode = True
@@ -222,12 +218,11 @@ async def _spinner(message, prog=None, units=""):
     for c in cycle("|/-\\"):
         try:
             if prog is None:
-                msg = "{} {}...".format(c, message)
+                msg = f"{c} {message}..."
             else:
-                msg = "{} {}... ({}/{}{}{}) ".format(c, message, prog.fmtCurrent(),
-                                                     prog.fmtTotal(),
-                                                     (" " if units else ""),
-                                                     units)
+                msg = (f"{c} {message}... "
+                       f"({prog.fmtCurrent()}/{prog.fmtTotal()}"
+                       f"{' ' if units else ''}{units}) ")
             write(msg)
             flush()
             await asyncio.sleep(0.1)
@@ -239,12 +234,11 @@ async def _spinner(message, prog=None, units=""):
             flush()
             c = '-'
             if prog is None:
-                msg = "{} {}... Done.".format(c, message)
+                msg = f"{c} {message}... Done."
             else:
-                msg = "{} {}... ({}/{}{}{}) ".format(c, message, prog.fmtCurrent(),
-                                                     prog.fmtTotal(),
-                                                     (" " if units else ""),
-                                                     units)
+                msg = (f"{c} {message}... "
+                       f"({prog.fmtCurrent()}/{prog.fmtTotal()}"
+                       f"{' ' if units else ''}{units}) ")
             write(msg)
             print()
             break
@@ -257,7 +251,7 @@ def _helpdeco(fn):
     """
     @wraps(fn)
     def helpfulFn(*args, help=False, **kwargs):
-        if help is True:
+        if help:
             print("{}{}{}".format(_g.ansiHelpYellow,
                                   fn.__doc__.split("\n    **")[0],
                                   _g.ansiReset))
@@ -317,8 +311,8 @@ def _error(msg):
     """
     Generic error printer.
     """
-    print("{}error:{} {}{}{}".format(_g.ansiErrorRed, _g.ansiReset,
-                                     _g.ansiErrorText, msg, _g.ansiReset))
+    print(f"{_g.ansiErrorRed}error:{_g.ansiReset} "
+          f"{_g.ansiErrorText}{msg}{_g.ansiReset}")
     return _ret.FAILURE
 
 
