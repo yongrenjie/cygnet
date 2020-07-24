@@ -1,3 +1,12 @@
+"""
+commands.py
+-----------
+
+Functions which the command line calls. These should NOT be used by other
+functions in the programme, as the interface is designed SOLELY for command
+line usage!
+"""
+
 import subprocess
 import asyncio
 from pathlib import Path
@@ -9,6 +18,7 @@ from operator import itemgetter
 import yaml
 import prompt_toolkit as pt
 
+from . import peepdoi
 from . import refMgmt
 from . import listPrint
 from . import backup
@@ -19,10 +29,9 @@ from ._shared import *
 @_timedeco
 def read(args=None, silent=False):
     """
-    Usage: r[ead] [path_to_file]
+    Usage: r[ead] [directory]
 
-    Reads a list of articles stored as a YAML file. If the argument is a
-    directory, then attempts to read a file named db.yaml in the directory.
+    Reads a list of articles from the given directory.
 
     This function is automatically called when PeepLaTeX first starts, using
     either the argument passed on the command-line, or with the user's current
@@ -30,149 +39,114 @@ def read(args=None, silent=False):
 
     When a new database is read in, the references will be sorted by year. The
     undo history will also be cleared.
-
-    ** Function details **
-    Reads from a YAML file. Sets the global variables _g.articleList and
-    _g.currentPath if successful.
-
-    Arguments:
-        args:   String, pathlib.Path object, or a list/tuple containing a string
-                or Path object as the first item.
-        silent: True to suppress output. Does not suppress errors.
-
-    Returns:
-        Return codes as defined in _ret.
     """
-    # Argument parsing
-    if isinstance(args, (list, tuple)):
-        try:
-            args = args[0]
-        except IndexError:   # empty list or tuple
-            args = Path.cwd()
-    try:
-        p = Path(args)
-    except TypeError:   # not castable
-        return _error("read: invalid argument '{}'".format(args))
-    else:
-        # if p is not an absolute path, we want to resolve it with respect
-        # to _g.currentPath. If that is None, we fall back to Path.cwd().
-        if not p.is_absolute():
-            p = (_g.currentPath.parent if _g.currentPath is not None \
-                 else Path.cwd()) / p
+    def parse_args(args):
+        """
+        Takes args and returns the directory to read from as a pathlib.Path
+        object.
+        """
+        # No directory specified
+        if args == []:
+            return _error("read: no filename specified")
+        # Directory was specified as args[0]
+        else:
+            try:
+                p = Path(args[0])
+                if not p.is_absolute():
+                    p = _g.currentPath / p
+                p = p.resolve().expanduser()
+                return p
+            except TypeError:  # not castable
+                print("hi")
+                return _error(f"read: invalid argument '{args}'")
 
-    # If it points to an existing directory, load db.yaml from there
-    if p.is_dir() and p.exists():
-        p = p / "db.yaml"
-    # Expand tildes and relative paths
-    fname = p.expanduser().resolve()
+    # Parse arguments
+    p = parse_args(args)
+    if p == _ret.FAILURE:
+        return p
+
     # If it is the same file, don't bother loading it
-    if fname == _g.currentPath:
-        return _error("read: file {} already loaded".format(fname))
+    if p == _g.currentPath:
+        return _error(f"read: folder {p} already loaded")
 
     # If there is an article list loaded, save it first!
     if _g.articleList and _g.currentPath and _g.changes != []:
         _g.changes = []
-        write()
+        fileio.write_articles(_g.articleList, _g.currentPath)
     elif _g.articleList and not _g.currentPath:
         # list was created from scratch
-        return _error("read: current library has not been saved, cannot read a new list")
-
-    # Check if the yaml file exists
-    if not fname.exists():
-        return _error("read: file {} not found".format(fname))
+        return _error("read: current library has not been saved, "
+                      "cannot read a new list")
 
     # Read in the yaml file
     try:
-        with open(fname, "r") as fp:
-            if not silent:
-                print("read: reading library {}... ".format(fname))
-            try:
-                # don't overwrite the global first...
-                newArticles = list(yaml.safe_load_all(fp))
-            except yaml.YAMLError:
-                return _error("read: invalid YAML file {}".format(fname))
-            if not silent:
-                print("read: done")
-    except FileNotFoundError:  # seems redundant, but ok
-        return _error("read: file {} not found".format(fname))
+        new_articles = fileio.read_articles(p)
+    except yaml.YAMLError:
+        return _error(f"read: invalid YAML file {p / 'db.yaml'}")
+    except FileNotFoundError:
+        return _error(f"read: file {p / 'db.yaml'} was not found")
     else:
-        ### At this point no more errors are expected, we can set the globals.
-        # Clear history.
-        _clearHist()
-        # Set articles.
-        _g.articleList = newArticles
-        # Backup the new article list before doing anything, but only if
-        # it's really a new article...
-        if fname != _g.currentPath:
-            _g.currentPath = fname
-            backup.createBackup()
-        # Then sort the list in place (which will trigger autosave)
-        sortArticleList()
+        print("read: done")
 
+    # At this point no more errors are expected, so we can change the programme
+    # state.
+    _clearHist()
+    _g.articleList = new_articles
+    _g.currentPath = p
+    backup.createBackup()
+    sortArticleList()  # TODO remove reference
     return _ret.SUCCESS
 
 
 @_helpdeco
 @_timedeco
-def write(args=None, silent=False):
+def write(args):
     """
-    Usage: w[rite] [path_to_file]
+    Usage: w[rite] [directory]
 
-    Writes the current database to a YAML file. If the argument is a directory,
-    then writes to the file db.yaml in that directory. If the argument is not
-    provided, then writes to the path of the currently loaded database.
-
-    ** Function details **
-    Writes to a YAML file.
-
-    Arguments:
-        args:   String, pathlib.Path object, or a list/tuple containing a string
-                or Path object as the first item.
-        silent: True to suppress output. Does not suppress errors.
-
-    Returns:
-        Return codes as defined in _ret.
+    Saves the current database to a directory. Uses the currently active
+    directory by default.
     """
-    ### Argument parsing
-    # Convert to a pathlib.Path object regardless of the input
-    if isinstance(args, (list, tuple)):
-        try:
-            args = args[0]
-        except IndexError:   # empty list or tuple
+    def parse_args(args):
+        """
+        Takes args and returns the directory to be written to as a pathlib.Path
+        object.
+        """
+        # No directory specified; use currentPath by default
+        if args == []:
             if _g.currentPath is not None:
-                args = _g.currentPath
+                return _g.currentPath
             else:
                 return _error("write: no filename specified")
-    if args is None:
-        if _g.currentPath is not None:
-            args = _g.currentPath
+        # Directory was specified as args[0]
         else:
-            return _error("write: no filename specified")
-    try:
-        fname = Path(args)
-    except TypeError:  # not castable
-        return _error("write: invalid argument '{}'".format(args))
+            try:
+                p = Path(args[0])
+                if not p.is_absolute():
+                    p = _g.currentPath / p
+                p = p.resolve().expanduser()
+                return p
+            except TypeError:  # not castable
+                return _error(f"write: invalid argument '{args}'")
 
-    # Determine output location
-    if fname.is_dir() and fname.exists():
-        fname = fname / "db.yaml"
-
+    # Parse arguments
+    p = parse_args(args)
+    if p == _ret.FAILURE:
+        return p
+    # TODO If the directory doesn't exist, check if the user wants to create it
+    # Then set the force parameter accordingly
+    force = False
     # Write to the file
     try:
-        with open(fname, "w") as fp:
-            if not silent:
-                print("write: writing current library to {}... ".format(fname))
-            yaml.dump_all(_g.articleList, fp)
-            if _g.currentPath is None:
-                _g.currentPath = fname
-            _g.changes = []
-            if not silent:
-                print("write: done")
+        fileio.write_articles(_g.articleList, p, force=force)
     except FileNotFoundError:
-        return _error("write: directory {} does not exist".format(fname.parent))
+        return _error(f"write: directory {p} does not exist")
+    else:
+        _g.currentPath = p
+        _g.changes = []
+        return _ret.SUCCESS
 
-    return _ret.SUCCESS
-
+# TODO refactor the rest
 
 @_helpdeco
 @_timedeco
@@ -552,7 +526,7 @@ async def addRef(args):
 
     # Perform asynchronous HTTP requests
     arts = []
-    crefCoros = [refMgmt.DOIToMetadata(doi, _g.ahSession) for doi in dois]
+    crefCoros = [peepdoi.to_article_cr(doi, _g.ahSession) for doi in dois]
     for coro in asyncio.as_completed(crefCoros):
         arts.append(await coro)
         prog.incr(1)
@@ -757,7 +731,7 @@ async def updateRef(args):
 
     # Perform asynchronous HTTP requests
     dois = [aold["doi"] for aold in aolds]
-    crefCoros = [refMgmt.DOIToMetadata(doi, _g.ahSession) for doi in dois]
+    crefCoros = [peepdoi.to_article_cr(doi, _g.ahSession) for doi in dois]
     for coro in asyncio.as_completed(crefCoros):
         anews.append(await coro)
         prog.incr(1)

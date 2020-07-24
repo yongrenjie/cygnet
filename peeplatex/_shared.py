@@ -253,7 +253,7 @@ def _helpdeco(fn):
     def helpfulFn(*args, help=False, **kwargs):
         if help:
             print("{}{}{}".format(_g.ansiHelpYellow,
-                                  fn.__doc__.split("\n    **")[0],
+                                  fn.__doc__,
                                   _g.ansiReset))
             return _ret.SUCCESS
         else:
@@ -267,7 +267,7 @@ def _asynchelpdeco(fn):
     async def helpfulAsyncFn(*args, help=False, **kwargs):
         if help is True:
             print("{}{}{}".format(_g.ansiHelpYellow,
-                                  fn.__doc__.split("\n    **")[0],
+                                  fn.__doc__,
                                   _g.ansiReset))
             return _ret.SUCCESS
         else:

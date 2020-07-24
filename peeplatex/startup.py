@@ -20,6 +20,7 @@ import aiohttp
 import prompt_toolkit as pt
 
 from . import prompt
+from . import fileio
 from . import backup
 from . import commands
 from ._shared import *
@@ -52,11 +53,19 @@ def main():
     if _g.debug:
         _debug("Debugging mode enabled.")
 
-    # Read in the folder specified in argv.
-    infile = Path(args.db).resolve().expanduser()
-    if (infile / "db.yaml").is_file():
-        # This automatically performs a backup.
-        commands.read(infile / "db.yaml")
+    # Read in the folder specified by args.db.
+    dir = Path(args.db).resolve().expanduser()
+    if dir.is_dir():
+        try:
+            _g.articleList = fileio.read_articles(dir)
+        except FileNotFoundError:
+            pass
+        except yaml.YAMLError:
+            _error(f"A db.yaml file was found in {dir}, "
+                   "but it contained invalid YAML.")
+        else:
+            _g.currentPath = dir
+            backup.createBackup()
 
     # Run main coroutine until complete
     loop = asyncio.get_event_loop()

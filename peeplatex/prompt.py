@@ -27,7 +27,7 @@ class peepPrompt():
     })
     def make_message(self):
         # Construct nice form of _g.currentPath..
-        path = str(_g.currentPath.parent) if _g.currentPath is not None else ""
+        path = str(_g.currentPath) if _g.currentPath is not None else ""
         path = path.replace(str(Path.home()), "~")
         path = f"({path}) " if path else ""
         msg = [("class:path"  , path),

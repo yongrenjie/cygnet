@@ -49,7 +49,7 @@ authors:
   given: Martial
 - family: Bodenhausen
   given: Geoffrey
-doi: doi.org/10.1016/0022-2364(89)90018-8
+doi: 10.1016/0022-2364(89)90018-8
 issue: 1
 journalLong: Journal of Magnetic Resonance (1969)
 journalShort: J. Magn. Reson.
@@ -69,7 +69,7 @@ journalLong: Journal of Magnetic Resonance
 journalShort: J. Magn. Reson.
 pages: 32-36
 timeAdded: 2020-06-19 19:14:23.815314+00:00
-timeOpened: 2020-06-19 19:14:23.815319+00:00
+timeOpened: 2020-07-24 13:47:11.331769+00:00
 title: Chirp excitation
 volume: 282
 year: 2017
