@@ -142,11 +142,11 @@ class peepPrompt():
                         commands.openRef(args, help=help)
                     elif cmd in ["w", "wr", "wri", "writ",           # WRITE
                                  "write"]:
-                        commands.write(args, help=help)
+                        commands.cli_write(args, help=help)
                     elif cmd in ["l", "li", "ls", "lis", "list"]:    # LIST
-                        commands.listArticles(args, help=help)
-                    elif cmd in ["r", "re", "rea", "read"]:          # READ
-                        commands.read(args, help=help)
+                        commands.cli_list(args, help=help)
+                    elif cmd in ["cd"]:                              # CD
+                        commands.cli_cd(args, help=help)
                     elif cmd in ["e", "ed", "edi", "edit"]:          # EDIT
                         if help is False:
                             _saveHist(cmd, args)

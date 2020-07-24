@@ -31,16 +31,10 @@ def main():
     Entry point for the program. Perform startup tasks, then run the
     main coroutine.
     """
-    # Resize terminal
-    cols, rows = os.get_terminal_size()
-    cols = max(cols, 175)
-    rows = max(rows, 50)
-    sys.stdout.write(f"\x1b[8;{rows};{cols}t")
-
     # Parse sys.argv
     parser = argparse.ArgumentParser()
-    parser.add_argument("db",
-                        help=("Folder to load upon startup. "
+    parser.add_argument("path",
+                        help=("Path to start PeepLaTeX in. "
                               "Defaults to current working directory."),
                         nargs='?',
                         default=Path.cwd())
@@ -53,9 +47,12 @@ def main():
     if _g.debug:
         _debug("Debugging mode enabled.")
 
-    # Read in the folder specified by args.db.
-    dir = Path(args.db).resolve().expanduser()
+    # Startup.
+    dir = Path(args.path).resolve().expanduser()
     if dir.is_dir():
+        # Set current path
+        _g.currentPath = dir
+        # Try to load the db.yaml file, if it exists
         try:
             _g.articleList = fileio.read_articles(dir)
         except FileNotFoundError:
@@ -64,13 +61,19 @@ def main():
             _error(f"A db.yaml file was found in {dir}, "
                    "but it contained invalid YAML.")
         else:
-            _g.currentPath = dir
             backup.createBackup()
+        # Resize terminal
+        cols, rows = os.get_terminal_size()
+        cols = max(cols, 175)
+        rows = max(rows, 50)
+        sys.stdout.write(f"\x1b[8;{rows};{cols}t")
+        # Run main coroutine until complete
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main_coro())
+        loop.close()
+    else:
+        _error(f"PeepLaTeX: directory {args.path} does not exist")
 
-    # Run main coroutine until complete
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main_coro())
-    loop.close()
 
 
 async def main_coro():

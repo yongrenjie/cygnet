@@ -18,6 +18,7 @@ from operator import itemgetter
 import yaml
 import prompt_toolkit as pt
 
+from . import fileio
 from . import peepdoi
 from . import refMgmt
 from . import listPrint
@@ -27,126 +28,141 @@ from ._shared import *
 
 @_helpdeco
 @_timedeco
-def read(args=None, silent=False):
+def cli_cd(args=None, silent=False):
     """
-    Usage: r[ead] [directory]
+    *** cd ***
 
-    Reads a list of articles from the given directory.
+    Usage
+    -----
+    cd [directory]
 
-    This function is automatically called when PeepLaTeX first starts, using
-    either the argument passed on the command-line, or with the user's current
-    working directory.
+    Description
+    -----------
+    Changes the current working directory to the given directory, then attempts
+    to read in a database from a db.yaml file.
 
     When a new database is read in, the references will be sorted by year. The
     undo history will also be cleared.
     """
-    def parse_args(args):
-        """
-        Takes args and returns the directory to read from as a pathlib.Path
-        object.
-        """
-        # No directory specified
+    # Parse arguments as directory
+    try:
+        p = parse_directory(args)
+    except ArgumentError as e:
+        # If no arguments are provided, we default to user's home directory.
         if args == []:
-            return _error("read: no filename specified")
-        # Directory was specified as args[0]
+            p = Path.home()
         else:
-            try:
-                p = Path(args[0])
-                if not p.is_absolute():
-                    p = _g.currentPath / p
-                p = p.resolve().expanduser()
-                return p
-            except TypeError:  # not castable
-                print("hi")
-                return _error(f"read: invalid argument '{args}'")
+            return _error(f"cd: {str(e)}")
 
-    # Parse arguments
-    p = parse_args(args)
-    if p == _ret.FAILURE:
-        return p
+    if not p.is_dir():
+        return _error(f"cd: directory {p} does not exist")
 
-    # If it is the same file, don't bother loading it
+    # If it is the same file, don't bother doing anything
     if p == _g.currentPath:
-        return _error(f"read: folder {p} already loaded")
+        return
 
-    # If there is an article list loaded, save it first!
+    # Otherwise, save the previous article list first (if there is any)
     if _g.articleList and _g.currentPath and _g.changes != []:
         _g.changes = []
         fileio.write_articles(_g.articleList, _g.currentPath)
-    elif _g.articleList and not _g.currentPath:
-        # list was created from scratch
-        return _error("read: current library has not been saved, "
-                      "cannot read a new list")
 
-    # Read in the yaml file
+    # Change the path
+    _g.currentPath = p
+
+    # Try to read in the yaml file, if it exists
     try:
         new_articles = fileio.read_articles(p)
     except yaml.YAMLError:
-        return _error(f"read: invalid YAML file {p / 'db.yaml'}")
+        _error(f"cd: A db.yaml file was found in {p}, "
+               "but it contained invalid YAML.")
     except FileNotFoundError:
-        return _error(f"read: file {p / 'db.yaml'} was not found")
+        # Clear out existing articles, if any
+        _g.articleList = []
     else:
-        print("read: done")
+        # Load those new articles
+        _g.articleList = new_articles
+        backup.createBackup()
+        sortArticleList()  # TODO remove reference to sortArticleList()
+    finally:
+        _clearHist()
+        return _ret.SUCCESS
 
-    # At this point no more errors are expected, so we can change the programme
-    # state.
-    _clearHist()
-    _g.articleList = new_articles
-    _g.currentPath = p
-    backup.createBackup()
-    sortArticleList()  # TODO remove reference
+
+@_helpdeco
+@_timedeco
+def cli_write(args):
+    """
+    *** write ***
+
+    Usage
+    -----
+    w[rite]
+
+    Description
+    -----------
+    Saves the current database to the current working directory.
+
+    Note that changes are automatically saved every few seconds. This means
+    that in practice the need for this function should not arise often.
+    """
+    if _g.articleList != []:
+        fileio.write_articles(_g.articleList, _g.currentPath)
+        _g.changes = []
+    else:
+        return _error("write: no articles loaded")
     return _ret.SUCCESS
 
 
 @_helpdeco
 @_timedeco
-def write(args):
+def cli_list(args):
     """
-    Usage: w[rite] [directory]
+    *** list ***
 
-    Saves the current database to a directory. Uses the currently active
-    directory by default.
+    Usage
+    -----
+    l[ist] [-l] [refnos]
+
+    Description
+    -----------
+    Lists articles in the currently loaded database. If no further reference
+    numbers are specified, lists all articles. Also prints information about
+    whether the full text PDF and the SI are stored in the database.
+
+    Reference numbers may be specified as a comma- or space-separated series of
+    integers or ranges (low-high, inclusive). For example, 'l 41-43' lists
+    articles 41 through 43. 'l 4, 9, 21-24' lists articles 4, 9, and 21 through
+    24. 'all' can be used as a shortcut for every reference number.
+
+    By default, the list of authors in each article is truncated such that they
+    occupy at most 5 lines. To prevent this behaviour, pass the "-l" flag.
     """
-    def parse_args(args):
-        """
-        Takes args and returns the directory to be written to as a pathlib.Path
-        object.
-        """
-        # No directory specified; use currentPath by default
-        if args == []:
-            if _g.currentPath is not None:
-                return _g.currentPath
-            else:
-                return _error("write: no filename specified")
-        # Directory was specified as args[0]
-        else:
-            try:
-                p = Path(args[0])
-                if not p.is_absolute():
-                    p = _g.currentPath / p
-                p = p.resolve().expanduser()
-                return p
-            except TypeError:  # not castable
-                return _error(f"write: invalid argument '{args}'")
+    if _g.articleList == []:
+        return _error("list: no articles found")
 
-    # Parse arguments
-    p = parse_args(args)
-    if p == _ret.FAILURE:
-        return p
-    # TODO If the directory doesn't exist, check if the user wants to create it
-    # Then set the force parameter accordingly
-    force = False
-    # Write to the file
+    # Check for (potentially multiple) '-l' arguments
+    all_authors = "-l" in args
+    while "-l" in args:
+        args.remove("-l")
+
+    # Parse remaining arguments as refnos
     try:
-        fileio.write_articles(_g.articleList, p, force=force)
-    except FileNotFoundError:
-        return _error(f"write: directory {p} does not exist")
-    else:
-        _g.currentPath = p
-        _g.changes = []
-        return _ret.SUCCESS
+        refnos = parse_refnos(args)
+    except ArgumentError as e:
+        return _error(f"list: {str(e)}")
+    # If no refnos provided, then assume all
+    if len(refnos) == 0:
+        refnos = set(range(1, len(_g.articleList) + 1))
 
-# TODO refactor the rest
+    # Pick out the desired references.
+    # We have to do it at this stage before we calculate the field widths.
+    articles = [deepcopy(_g.articleList[r - 1]) for r in refnos]
+
+    # TODO finish refactoring list()
+    # Probably we need to create the equivalent of this listArticles interface in
+    # listPrint.py (also change the camelCase...)
+    listArticles(articles=articles, refnos=refnos)
+
 
 @_helpdeco
 @_timedeco
@@ -268,6 +284,7 @@ def listArticles(args=None, articles=None, refnos=None, maxAuth=5, type="long"):
     else:
         return _error("listArticles: invalid type '{}'".format(type))
 
+# TODO refactor the rest
 
 @_helpdeco
 @_timedeco
@@ -1185,3 +1202,94 @@ async def fetchPDF(args):
     print("fetchPDF: {} PDFs successfully fetched, {} failed".format(yes, no))
     return _ret.SUCCESS
 
+
+
+class ArgumentError(Exception):
+    """
+    Exception indicating that something about the arguments was invalid.
+    """
+    pass
+
+
+def parse_directory(args):
+    """
+    Takes a list of command-line arguments and returns a directory from the
+    first argument.
+
+    Used in cli_read(), cli_write().
+    """
+    # Check if it's empty...
+    if args == []:
+        raise ArgumentError("no filename specified")
+    # If not, then make a directory from args[0]
+    else:
+        try:
+            p = Path(args[0])
+            if not p.is_absolute():
+                p = _g.currentPath / p
+            p = p.resolve().expanduser()
+            return p
+        except TypeError:  # not castable
+            raise ArgumentError(f"invalid argument{_p(args)} {args}")
+
+
+def parse_refnos(args):
+    """
+    Takes a list of arguments and returns a set of integer reference numbers.
+     e.g. ['1']           -> {1}
+          ['1-5']         -> {1, 2, 3, 4, 5}
+          ['1-4', '43']   -> {1, 2, 3, 4, 43}
+          ['1-4,6', '43'] -> {1, 2, 3, 4, 6, 43}
+    Special cases:
+          "all"    -> every refno in the full article list
+          "last"   -> the most recently opened reference
+          "latest" -> the most recently opened reference
+
+    Returns:
+        If successfully parsed, returns a set (not list) of reference numbers
+        as integers. Otherwise returns _ret.FAILURE.
+    """
+    # Convert args into a string.
+    # Because args should already have been split by spaces, we just need to
+    # make sure that it's split by all commas.
+    s = ','.join(args)
+    strs = s.split(",")
+    # The easy way out
+    if strs == ["all"]:
+        return set(range(1, len(_g.articleList) + 1))
+    elif strs == ["last"] or strs == ["latest"]:
+        # Get the index of the most recently opened article.
+        # t is the (refno, article) tuple generated by enumerate(), and
+        # t[1] is the article dictionary, so t[1]["timeOpened"] is the
+        # time opened.
+        argmax, _ = max(enumerate(_g.articleList, start=1),
+                        key=lambda t: t[1]["timeOpened"])
+        return {argmax}
+    # Otherwise we've got to parse it.
+    refnos = set()   # to avoid duplicates
+    try:
+        for i in strs:
+            if i == "":
+                continue
+            if "-" in i:
+                # Parse the range.
+                rmin, rmax = i.split("-")   # ValueError if too many entries
+                rmin = int(rmin)
+                rmax = int(rmax)
+                if rmin >= rmax:
+                    return _ret.FAILURE
+                for m in range(rmin, rmax + 1):
+                    t.add(m)
+            else:
+                refnos.add(int(i))          # ValueError if not castable to int
+    except (ValueError, TypeError):
+        # ValueError -- something couldn't be casted to int
+        # TypeError  -- input wasn't iterable
+        raise ArgumentError(f"invalid argument{_p(args)} {args}")
+
+    # Basic argument checking
+    for r in refnos:
+        if r > len(_g.articleList):
+            raise ArgumentError(f"no article with refno {r}")
+
+    return refnos
