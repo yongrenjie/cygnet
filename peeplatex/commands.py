@@ -20,15 +20,15 @@ import prompt_toolkit as pt
 
 from . import fileio
 from . import peepdoi
+from . import listprint
 from . import refMgmt
-from . import listPrint
 from . import backup
 from ._shared import *
 
 
 @_helpdeco
 @_timedeco
-def cli_cd(args=None, silent=False):
+def cli_cd(args):
     """
     *** cd ***
 
@@ -141,7 +141,7 @@ def cli_list(args):
         return _error("list: no articles found")
 
     # Check for (potentially multiple) '-l' arguments
-    all_authors = "-l" in args
+    max_auth = 0 if "-l" in args else 5
     while "-l" in args:
         args.remove("-l")
 
@@ -154,144 +154,29 @@ def cli_list(args):
     if len(refnos) == 0:
         refnos = set(range(1, len(_g.articleList) + 1))
 
-    # Pick out the desired references.
-    # We have to do it at this stage before we calculate the field widths.
-    articles = [deepcopy(_g.articleList[r - 1]) for r in refnos]
+    # Pick out the desired references. No need to make a copy because
+    # print_list() does it for us.
+    articles = [_g.articleList[r - 1] for r in refnos]
 
-    # TODO finish refactoring list()
-    # Probably we need to create the equivalent of this listArticles interface in
-    # listPrint.py (also change the camelCase...)
-    listArticles(articles=articles, refnos=refnos)
+    # Now print it
+    try:
+        listprint.print_list(articles, refnos, max_auth)
+    except ValueError as e:
+        return _error(f"list: {str(e)}")
 
-
-@_helpdeco
-@_timedeco
-def listArticles(args=None, articles=None, refnos=None, maxAuth=5, type="long"):
-    """
-    Usage: l[ist] [refnos]
-
-    Lists articles in the currently loaded database. If no further reference
-    numbers are specified, lists all articles. Also prints information about
-    whether the full text PDF and the SI are stored in the database.
-
-    Reference numbers may be specified as a comma- or space-separated series of
-    integers or ranges (low-high, inclusive). For example, 'l 41-43' lists
-    articles 41 through 43. 'l 4, 9, 21-24' lists articles 4, 9, and 21 through
-    24. 'all' can be used as a shortcut for every reference number.
-
-    By default, if this is invoked with just 'l', the list of authors in each
-    article is truncated such that it occupies at most 5 lines. This default
-    behaviour can be overruled by specifying reference numbers, as described
-    above. Thus, using 'l all' will print the entire list but with all authors.
-
-    ** Function details **
-    Prints a list of articles. This function essentially has two interfaces.
-
-    The first interface is via the command-line, where 'args' is passed as a
-    list of strings. This is parsed to give a list of reference numbers which
-    should be printed.
-
-    The second, more flexible, interface is for printing specific lists of
-    articles, for example those which have been filtered by a search keyword.
-    To use this, pass the lists 'articles' and 'refnos' as arguments. This is
-    (usually) more suitable for use from other subroutines. An additional
-    parameter 'type' can be used to control the verbosity.
-
-    If one simply wants to print every article, then this can be most easily
-    invoked as listArticles().
-
-    Arguments:
-        args:     List of command-line arguments. Passing this manually is not
-                  recommended; instead, use the articles and refnos parameters.
-        articles: List of articles to be printed. Defaults to _g.articleList.
-        refnos:   List of refnos to be printed. Defaults to
-                  range(1, len(articles) + 1).
-                  The order of the two lists passed, articles and refnos, is
-                  always preserved (using zip()).
-        type:     'long' - prints every article.
-                  'short' - prints the first two and last two articles.
-
-    Returns:
-        Return codes as defined in _ret.
-    """
-
-    # Interface 1: via command line
-    if articles is None and refnos is None:
-        arts = deepcopy(_g.articleList)
-        l = len(arts)
-        # If short mode is requested but the list is too short, go back to long mode
-        if type == "short" and l <= 4:
-            type == "long"
-        # Exit if an empty list is provided
-        if arts == []:
-            return _error("listArticles: no articles found")
-
-        # Parse reference numbers.
-        # If it's short, then we don't need to do anything beyond picking those four
-        if type == "short":
-            refnos = [1, 2, l - 1, l]
-        if type == "long":
-            # By default print all references, otherwise fetch refnos.
-            if args == []:
-                refnos = range(1, l + 1)
-            else:
-                refnos = refMgmt.parseRefno(",".join(args))
-            # Check the returned values
-            if refnos is _ret.FAILURE or refnos == [] or any(r > l for r in refnos):
-                return _error("listArticles: invalid "
-                              "argument{} '{}' given".format(_p(args), " ".join(args)))
-        # Pick out the desired references.
-        # We have to do it at this stage before we calculate the field widths.
-        arts = [arts[r - 1] for r in refnos]
-
-    # Interface 2: via arguments 'articles' and 'refnos'
-    else:
-        arts = deepcopy(articles)
-        l = len(arts)
-        refnos = list(refnos)
-        if l != len(refnos):
-            return _error("listArticles: articles and refnos "
-                          "have different lengths ({} and {})".format(l, len(refnos)))
-
-    # Truncate authors if the list was called with just 'l' from command-line.
-    if args == []:
-        arts = [listPrint.truncateAuthors(a, maxAuth=5) for a in arts]
-    # Always print PDF availability.
-    printAvail = True
-
-    # Get field sizes
-    layout_str = "{0:<{1}}{2:{3}}{4:<{5}}{6:{7}}{8:{9}}"
-    fss = listPrint.getFS(arts, refnos)
-    number_fs, author_fs, year_fs, journal_fs, title_fs = fss
-
-    # Print header
-    listPrint.printListHead(layout_str, fss)
-
-    # Print all article contents
-    if type == "long":
-        for r, a in zip(refnos, arts):
-            listPrint.listOneArticle(r, a, layout_str, fss, printAvail)
-        return _ret.SUCCESS
-    elif type == "short":
-        # refnos and arts have already been set correctly, so we can index from 0 to 3
-        # don't print PDF availability.
-        listPrint.listOneArticle(refnos[0], arts[0], layout_str, fss, False)
-        listPrint.listOneArticle(refnos[1], arts[1], layout_str, fss, False)
-        listPrint.printDots(layout_str, fss)
-        listPrint.listOneArticle(refnos[2], arts[2], layout_str, fss, False)
-        listPrint.listOneArticle(refnos[3], arts[3], layout_str, fss, False)
-        return _ret.SUCCESS
-    else:
-        return _error("listArticles: invalid type '{}'".format(type))
-
-# TODO refactor the rest
 
 @_helpdeco
 @_timedeco
-def openRef(args):
+def cli_open(args):
     """
-    Usage: o[pen] refno[...] [formats]
+    *** open ***
 
+    Usage
+    -----
+    o[pen] refno[...] [formats]
+
+    Description
+    -----------
     Opens the original text of one or more references.
 
     At least one refno must be specified. For more details about the format in
@@ -306,63 +191,76 @@ def openRef(args):
 
     If the PDFs are not present in the relevant folder, they can be added using
     the 'ap' command.
-
-    ** Function details **
-    This function doesn't have bells or whistles. It just opens references.
-    This should only be invoked from the command-line. In the future we might
-    consider letting it take other parameters for manual specification of
-    refnos or formats, but for now, that's what this is.
-
-    Arguments:
-        args: List of command-line arguments.
-
-    Returns:
-        Return codes as defined in _ret.
     """
+    # Argument parsing
     if _g.articleList == []:
-        return _error("openRef: no articles have been loaded")
+        return _error("open: no articles have been loaded")
     if args == []:
-        return _error("openRef: no references selected")
-    # Process args
+        return _error("open: no references selected")
     abbrevs = {"p": "pdf",
                "s": "si",
                "w": "web"}
-    refnos, formats = refMgmt.parseRefnoFormat(args, abbrevs=abbrevs)
+    try:
+        refnos, formats = parse_refnos_formats(args, abbrevs=abbrevs)
+    except ArgumentError as e:
+        return _error(f"open: {str(e)}")
+    if len(refnos) == 0:
+        return _error("open: no references selected")
 
-    # Check the returned values
-    ls = len(_g.articleList)
-    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos) \
-            or formats is _ret.FAILURE or any(f not in abbrevs for f in formats):
-        return _error("openRef: invalid argument{} '{}' given".format(_p(args),
-                                                                      " ".join(args)))
-    # Default format
+    # Default format -- PDF
     if formats == []:
         formats = ['p']
 
     # Open the references
-    drfs = ((_g.articleList[r - 1]["doi"], r, f) for r in refnos for f in formats)
-    # open(1) is really fast, so it doesn't seem like this could be a problem unless we
-    #  are opening tons and tons of references. But if it does then we may want to use
-    #  some concurrency methods.
     yes, no = 0, 0
-    for drf in drfs:
-        c = refMgmt.openDOIType(*drf, _g.currentPath)
-        if c == _ret.SUCCESS:
-            _g.articleList[drf[1] - 1]["timeOpened"] = datetime.now(timezone.utc)
-            yes += 1
-        else:
-            no += 1
-    print("openRef: {} references opened, {} failed".format(yes, no))
+    for refno in refnos:
+        article = _g.articleList[refno - 1]
+        for format in formats:
+            try:
+                path = article.to_fname(format)
+            except ValueError as e:  # invalid format
+                _error(f"open: invalid format '{format}' given")
+                no += 1
+                continue
+            # Error checking
+            if format == "p":
+                if not path.is_file():
+                    _error(f"open: ref {refno}: PDF file {path} not found")
+                    no += 1
+                    continue
+            elif format == "s":
+                if not path.is_file():
+                    _error(f"open: ref {refno}: SI file {path} not found")
+                    no += 1
+                    continue
+            # Open it using open(1)
+            try:
+                subprocess.run(["open", path], check=True, capture_output=True)
+            except subprocess.CalledProcessError:
+                _error("open: ref {refno}: error opening file/URL {path}")
+                no += 1
+            else:
+                yes += 1
+                # Update time opened of article.
+                article.time_opened = datetime.now(timezone.utc)
+
+    print(f"open: {yes} references opened, {no} failed")
     _g.changes += ["open"] * yes
     return _ret.SUCCESS
 
 
 @_asynchelpdeco
 @_timedeco
-async def cite(args):
+async def cli_cite(args):
     """
-    Usage: c[ite] refno[...] [formats]
+    *** cite ***
 
+    Usage
+    -----
+    c[ite] refno[...] [formats]
+
+    Description
+    -----------
     Provides a citation for one or more references. Also copies the citation
     text to the clipboard.
 
@@ -378,56 +276,52 @@ async def cite(args):
         'markdown' or 'm'      - Markdown form of 'short' ACS style citation.
         'Markdown' or 'M'      - Markdown form of 'long' ACS style citation.
         'doi' or 'd'           - Just the DOI.
+        'word' or 'w'          - A suitable style for Microsoft Word (but no
+                                 formatting such as bold/italics).
 
-    ** Function details **
-    This function doesn't have bells or whistles. It just cites references.
-    This should only be invoked from the command-line. In the future we might
-    consider letting it take other parameters for manual specification of
-    refnos or formats, but for now, that's what this is.
-
-    Copying to the clipboard is implemented in an asynchronous manner, which
-    is nice.
-
-    Arguments:
-        args: List of command-line arguments.
-
-    Returns:
-        Return codes as defined in _ret.
     """
+    # Argument parsing
     if _g.articleList == []:
         return _error("cite: no articles have been loaded")
     if args == []:
         return _error("cite: no references selected")
-    # Process args
     abbrevs = {"d": "doi",
                "b": "bib",
                "m": "markdown",
                "M": "Markdown",
                "w": "word"}
-    refnos, formats = refMgmt.parseRefnoFormat(args, abbrevs=abbrevs)
-
+    try:
+        refnos, formats = parse_refnos_formats(args)
+    except ArgumentError as e:
+        return _error(f"cite: {str(e)}")
     # Check the returned values
-    ls = len(_g.articleList)
-    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos) \
-            or formats is _ret.FAILURE or any(f not in abbrevs for f in formats):
-        return _error("cite: invalid argument{} '{}' given".format(_p(args),
-                                                                   " ".join(args)))
+    if len(refnos) == 0:
+        return _error("cite: no references selected")
+
     # Default format = biblatex
     if formats == []:
         formats = ['b']
 
-    sep = ""  # Need a newline between citations if there is more than one.
-    afs = ((_g.articleList[r - 1], f) for r in refnos for f in formats)
-    citation = ""
-    for af in afs:
-        citation += sep
-        citation += refMgmt.MetadataToCitation(*af)
-        if len(refnos) > 1 or len(formats) > 1:
-            sep = "\n\n" if af[1] in "bMm" else "\n"
-    print(citation)
-    rval = await _copy(citation)
-    return rval
+    cite_list = []
+    for refno in refnos:
+        article = _g.articleList[refno - 1]
+        for format in formats:
+            try:
+                citation = article.to_citation(format)
+            except ValueError as e:  # invalid format
+                _error(f"cite: invalid format '{format}' given")
+                continue
+            else:
+                cite_list.append(citation)
 
+    citations = "\n\n".join(cite_list)
+    if citations.strip() != "":
+        print(citations)
+        await _copy(citations)
+    return _ret.SUCCESS
+
+
+# TODO: refactor the rest
 
 @_helpdeco
 @_timedeco
@@ -1203,6 +1097,7 @@ async def fetchPDF(args):
     return _ret.SUCCESS
 
 
+# New stuff related to refactoring...
 
 class ArgumentError(Exception):
     """
@@ -1216,7 +1111,7 @@ def parse_directory(args):
     Takes a list of command-line arguments and returns a directory from the
     first argument.
 
-    Used in cli_read(), cli_write().
+    Used by cli_read() and cli_write().
     """
     # Check if it's empty...
     if args == []:
@@ -1235,19 +1130,24 @@ def parse_directory(args):
 
 def parse_refnos(args):
     """
-    Takes a list of arguments and returns a set of integer reference numbers.
-     e.g. ['1']           -> {1}
-          ['1-5']         -> {1, 2, 3, 4, 5}
-          ['1-4', '43']   -> {1, 2, 3, 4, 43}
-          ['1-4,6', '43'] -> {1, 2, 3, 4, 6, 43}
+    Takes a list of arguments and returns a list of integer reference numbers.
+     e.g. ['1']           -> [1]
+          ['1-5']         -> [1, 2, 3, 4, 5]
+          ['1-4', '43']   -> [1, 2, 3, 4, 43]
+          ['1-4,6', '43'] -> [1, 2, 3, 4, 6, 43]
     Special cases:
           "all"    -> every refno in the full article list
           "last"   -> the most recently opened reference
           "latest" -> the most recently opened reference
 
+    Used by cli_list().
+
     Returns:
-        If successfully parsed, returns a set (not list) of reference numbers
-        as integers. Otherwise returns _ret.FAILURE.
+        If successfully parsed, returns a list of reference numbers as
+        integers.
+
+    Raises:
+        ArgumentError if the input was invalid in any way.
     """
     # Convert args into a string.
     # Because args should already have been split by spaces, we just need to
@@ -1279,7 +1179,7 @@ def parse_refnos(args):
                 if rmin >= rmax:
                     return _ret.FAILURE
                 for m in range(rmin, rmax + 1):
-                    t.add(m)
+                    refnos.add(m)
             else:
                 refnos.add(int(i))          # ValueError if not castable to int
     except (ValueError, TypeError):
@@ -1292,4 +1192,84 @@ def parse_refnos(args):
         if r > len(_g.articleList):
             raise ArgumentError(f"no article with refno {r}")
 
-    return refnos
+    return list(refnos)
+
+
+def parse_formats(args, abbrevs=None):
+    """
+    Parses command-line arguments as a series of formats.
+
+    Arguments:
+        args (list)    : Command-line arguments.
+        abbrevs (dict) : Dictionary containing abbreviations for formats: the
+                         keys are the long form and values are short form.
+
+    Returns:
+        List of formats in the form of one-letter codes.
+
+    Raises:
+        ArgumentError if the input was invalid.
+    """
+    s = "".join(args)
+    # Handle long forms by converting them to their short forms
+    if abbrevs is not None:
+        for short, long in abbrevs.items():
+            s.replace(long, short)
+    # Pick out the alphabetical characters in the string
+    t = set()
+    try:
+        for char in s:
+            if char.isalpha():
+                t.add(char)
+    except (AttributeError, TypeError):
+        # AttributeError -- isalpha() failed (i.e. not a character)
+        # TypeError      -- input wasn't iterable
+        raise ArgumentError(f"invalid argument{_p(args)} {args}")
+    else:
+        return list(t)
+
+
+def parse_refnos_formats(args, abbrevs=None):
+    """
+    Parses command-line arguments as a combination of refnos and formats.
+
+    Used by cli_open() and cli_cite().
+
+    Arguments:
+        args (list)    : Command-line arguments.
+        abbrevs (dict) : Dictionary containing abbreviations for formats: the
+                         keys are the long form and values are short form.
+                         Passed directly to parse_formats().
+
+    Returns:
+        Tuple of (refnos, formats).
+
+    Raises:
+        ArgumentError if the input was invalid.
+    """
+    # Check for 'all' or 'last' -- this makes our job substantially easier
+    # because it is the refno and everything else is the format
+    if args[0] in ["all", "last", "latest"]:
+        arg_refno = args[0]
+        arg_format = ",".join(args[1:])
+    # Otherwise we have to do it the proper way
+    else:
+        # Preprocess args
+        argstr = ",".join(args)
+        # The only allowable characters in refnos as [0-9,-], so we split the
+        # full string accordingly by finding the first character in argstr that
+        # isn't that.
+        x = next((i for i, c in enumerate(argstr) if c not in "1234567890,-"),
+                 len(argstr))
+        arg_refno = argstr[:x].split(",")
+        arg_format = argstr[x:].split(",")
+    # Delegate to the individual functions.
+    try:
+        refnos = parse_refnos(arg_refno)
+        formats = parse_formats(arg_format, abbrevs)
+    except ArgumentError:
+        # Catch the ArgumentError(s) in either one and raise one with the
+        # original args.
+        raise ArgumentError(f"invalid argument{_p(args)} {args}")
+    else:
+        return refnos, formats

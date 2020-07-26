@@ -125,4 +125,11 @@ def to_fname(doi, type):
     """
     Converts a given doi to a filename. The filename is absolute and is
     constructed using _g.currentPath.
+
+    Arguments:
+        doi (str)  : The DOI.
+        type (str) : "pdf" or "si".
     """
+    if type not in ["pdf", "si"]:
+        raise ValueError("Invalid type '{type}' given")
+    return _g.currentPath / type / (doi.replace('/', '#') + ".pdf")

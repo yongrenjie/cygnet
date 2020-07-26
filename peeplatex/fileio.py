@@ -7,6 +7,8 @@ Functions involving reading / writing to a file.
 
 import yaml
 
+from .peeparticle import Article
+
 
 def read_articles(dir, fname="db.yaml"):
     """
@@ -26,12 +28,10 @@ def read_articles(dir, fname="db.yaml"):
 
     # Read it in
     with open(dir / fname, "r") as fp:
-        articles = list(yaml.safe_load_all(fp))
+        article_dicts = list(yaml.safe_load_all(fp))
 
-    # Validate the data
-    # TODO: more checking (possibly)
-    if any(not isinstance(a, dict) for a in articles):
-        raise yaml.YAMLError
+    # Convert to Article instances. This implicitly validates the data.
+    articles = [Article(**d) for d in article_dicts]
 
     return articles
 
@@ -60,5 +60,6 @@ def write_articles(articles, dir, fname="db.yaml", force=False):
             raise FileNotFoundError(f"The directory {dir} does not exist.")
 
     # Serialise list of articles.
+    article_dicts = [vars(article) for article in articles]
     with open(dir / fname, "w") as fp:
-        yaml.dump_all(articles, fp)
+        yaml.dump_all(article_dicts, fp)

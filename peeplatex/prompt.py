@@ -60,7 +60,7 @@ class peepPrompt():
         f"\\----------------------------------------------------------------/{_g.ansiReset}\n"
     )
 
-    def parseLine(self, line):
+    def parse_line(self, line):
         """
         Parses the command-line input.
         """
@@ -120,7 +120,7 @@ class peepPrompt():
                     if line.strip() == "":
                         continue
                     # Otherwise, parse the line.
-                    cmd, args, help = self.parseLine(line)
+                    cmd, args, help = self.parse_line(line)
 
                     # Check for edge cases of help which cannot be delegated
                     # to the decorator.
@@ -137,9 +137,9 @@ class peepPrompt():
                                "zzzpeep"]:
                         break
                     elif cmd in ["c", "ci", "cit", "cite"]:          # CITE
-                        asyncio.create_task(commands.cite(args, help=help))
+                        asyncio.create_task(commands.cli_cite(args, help=help))
                     elif cmd in ["o", "op", "ope", "open"]:          # OPEN
-                        commands.openRef(args, help=help)
+                        commands.cli_open(args, help=help)
                     elif cmd in ["w", "wr", "wri", "writ",           # WRITE
                                  "write"]:
                         commands.cli_write(args, help=help)

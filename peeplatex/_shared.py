@@ -165,13 +165,6 @@ class _g():
         "Angewandte Chemie International Edition": "Angew. Chem. Int. Ed.",
         }
 
-    # Dictionary containing short forms for common terms in journal names, which can be
-    #  used when printing lists of articles (to save space). OK this is a bit small, but
-    #  in principle we can expand this in future.
-    jNameAbbrevs = {
-        "Nucl Magn Reson": "NMR",
-    }
-
     # Dictionary of escaped characters in paths.
     pathEscapes = {
         "\\ ": " ", "\\,": ",", "\\'": "'", '\\"': '"',

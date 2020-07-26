@@ -14,54 +14,7 @@ from copy import deepcopy
 import aiohttp
 from unidecode import unidecode
 
-from .fmt import fmtAuthor
 from ._shared import *
-
-
-def parseRefnoFormat(args, abbrevs=None):
-    """
-    Parses a list of reference numbers + formats from the prompt.
-    Does some preprocessing then delegates to parseRefno and parseFormat.
-    Useful for commands o(pen) and c(ite).
-    """
-    # Check for 'all' or 'last' -- this makes our job substantially easier
-    # because it is the refno and everything else is the format
-    if args[0] in ["all", "last", "latest"]:
-        argRefno = args[0]
-        argFormat = ",".join(args[1:])
-    # Otherwise we have to do it the proper way
-    else:
-        # Preprocess args
-        argstr = ",".join(args)
-        # Replace long forms with short forms, e.g. pdf -> p for openRef()
-        if abbrevs is not None:
-            for shortForm, longForm in abbrevs.items():
-                argstr = argstr.replace(longForm, shortForm)
-        # Find the first character in argstr that isn't [0-9,-]
-        x = next((i for i, c in enumerate(argstr) if c not in "1234567890,-"), len(argstr))
-        # Then repackage them
-        argRefno = argstr[:x]
-        argFormat = argstr[x:]
-
-    return (parseRefno(argRefno), parseFormat(argFormat))
-
-
-def parseFormat(s):
-    """
-    Takes a string s and returns a list of [A-Za-z] characters inside.
-    If there aren't any such characters, this returns an empty list, not None.
-    """
-    t = set()
-    try:
-        for i in s:
-            if i.isalpha():
-                t.add(i)
-    except (AttributeError, TypeError):
-        # AttributeError -- isalpha() failed (e.g. integers)
-        # TypeError      -- input wasn't iterable
-        return _ret.FAILURE
-    else:
-        return list(t)
 
 
 def unicode2Latex(s):
@@ -234,11 +187,11 @@ def diffArticles(aold, anew):
         an = deepcopy(anew)
         ndiff = 0
         # Fix the author key. Everything else can just be autoconverted into
-        #  strings.
+        # strings.
         if "authors" in ao:
-            ao["authors"] = ", ".join(fmtAuthor(auth) for auth in ao["authors"])
+            ao.authors = ", ".join(ao.format_authors())
         if "authors" in an:
-            an["authors"] = ", ".join(fmtAuthor(auth) for auth in an["authors"])
+            an.authors = ", ".join(an.format_authors())
         # Get the set of all items in ao and an
         # Don't compare the timeAdded and timeOpened fields
         allKeys = sorted((set(ao) | set(an)) - {"timeAdded", "timeOpened"})
@@ -267,83 +220,6 @@ def diffArticles(aold, anew):
                 print("{:>{}}: {}+ {}{}".format(key, maxlen, _g.ansiDiffGreen,
                                                 an[key], _g.ansiReset))
         return ndiff
-
-
-def MetadataToCitation(article, fmt):
-    """
-    Takes an article dictionary and returns it in a suitable plaintext format.
-
-    Formats allowed (so far):
-     - 'b': BibLaTeX.
-     - 'd': DOI only.
-     - 'm': Short Markdown. Only has journal, year, volume, issue, pages, DOI.
-     - 'M": Long Markdown. Includes author names and title as well.
-    """
-    a = deepcopy(article)
-    if fmt == 'd':
-        return a["doi"]
-
-    # Markdown short & long
-    elif fmt == 'm':
-        a["pages"] = a["pages"].replace('-','\u2013')   # en dash for page number
-        if "issue" in a and a["issue"]:
-            return "*{}* **{}**, *{}* ({}), {}. [DOI: {}](https://doi.org/{}).".format(
-                a["journalShort"], a["year"], a["volume"],
-                a["issue"], a["pages"].replace("-","\u2013"), a["doi"], a["doi"]
-            )
-        else:
-            return "*{}* **{}**, *{},* {}. [DOI: {}](https://doi.org/{}).".format(
-                a["journalShort"], a["year"], a["volume"],
-                a["pages"].replace("-","\u2013"), a["doi"], a["doi"]
-            )
-    elif fmt == 'M':
-        authorString = "; ".join((fmtAuthor(auth, "acs") for auth in a["authors"]))
-        if "issue" in a and a["issue"]:
-            return "{} {}. *{}* **{}**, *{}* ({}), {}. [DOI: {}](https://doi.org/{}).".format(
-                authorString, a["title"], a["journalShort"], a["year"], a["volume"],
-                a["issue"], a["pages"].replace("-","\u2013"), a["doi"], a["doi"]
-            )
-        else:
-            return "{} {}. *{}* **{}**, *{},* {}. [DOI: {}](https://doi.org/{}).".format(
-                authorString, a["title"], a["journalShort"], a["year"], a["volume"],
-                a["pages"].replace("-","\u2013"), a["doi"], a["doi"]
-            )
-
-    # Word
-    elif fmt == 'w':
-        authorString = "; ".join((fmtAuthor(auth, "acs") for auth in a["authors"]))
-        if "issue" in a and a["issue"]:
-            return "{} {} {}, {} ({}), {}.".format(
-                authorString, a["journalShort"], a["year"], a["volume"],
-                a["issue"], a["pages"].replace("-","\u2013")
-            )
-        else:
-            return "{} {} {}, {}, {}.".format(
-                authorString, a["journalShort"], a["year"], a["volume"],
-                a["pages"].replace("-","\u2013")
-            )
-
-    # BibLaTeX
-    elif fmt == 'b':
-        refName = unidecode(a["authors"][0]["family"]) + \
-            str(a["year"]) + \
-            "".join(c for c in "".join(w for w in a["journalShort"].split())
-                    if c.isupper())
-        authNames = " and ".join(unicode2Latex(fmtAuthor(auth, style="bib"))
-                                 for auth in a["authors"])
-        s = "@article{{{},\n".format(refName) + \
-            "    doi = {{{}}},\n".format(a["doi"]) + \
-            "    author = {{{}}},\n".format(authNames) + \
-            "    journal = {{{}}},\n".format(a["journalShort"]).replace(". ", ".\\ ") + \
-            "    title = {{{}}},\n".format(unicode2Latex(a["title"])) + \
-            "    year = {{{}}},\n".format(a["year"]) + \
-            ("    volume = {{{}}},\n".format(a["volume"]) if "volume" in a else "") + \
-            ("    issue = {{{}}},\n".format(a["issue"]) if "issue" in a and a["issue"] else "") + \
-            ("    pages = {{{}}},\n".format(a["pages"]) if "pages" in a else "").replace("-","--") + \
-            "}"
-        return s
-    else:
-        return _error("MetadataToCitation: incorrect format {} received".format(fmt))
 
 
 def PDFToDOI(path):

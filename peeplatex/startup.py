@@ -75,7 +75,6 @@ def main():
         _error(f"PeepLaTeX: directory {args.path} does not exist")
 
 
-
 async def main_coro():
     """
     Main coroutine.
