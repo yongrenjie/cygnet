@@ -54,14 +54,14 @@ def main():
         _g.currentPath = dir
         # Try to load the db.yaml file, if it exists
         try:
-            _g.articleList = fileio.read_articles(dir)
+            _g.articleList = fileio.read_articles(dir / "db.yaml")
         except FileNotFoundError:
             pass
         except yaml.YAMLError:
             _error(f"A db.yaml file was found in {dir}, "
                    "but it contained invalid YAML.")
         else:
-            backup.createBackup()
+            backup.create_backup()
         # Resize terminal
         cols, rows = os.get_terminal_size()
         cols = max(cols, 175)
@@ -95,7 +95,7 @@ async def main_coro():
 
     # Program shutdown code.
     # Backup 
-    backup.createBackup()
+    backup.create_backup()
     # Stop autosave
     t_autosave.cancel()
     # prompt_toolkit bug if you spam commands like crazy

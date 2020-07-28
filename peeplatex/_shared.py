@@ -1,5 +1,5 @@
-__all__ = ["_g", "_ret", "_progress", "_spinner",
-           "_helpdeco", "_asynchelpdeco", "_timedeco", "_asynctimedeco",
+__all__ = ["_g", "_sort", "_ret",
+           "_helpdeco", "_timedeco", "_asynctimedeco",
            "_error", "_debug", "_p",
            "_copy", "_saveHist", "_clearHist", "_undo",
            ]
@@ -13,7 +13,6 @@ It also contains trivial functions that are used repeatedly throughout the code.
 import sys
 import subprocess
 import asyncio
-from itertools import cycle
 from locale import getpreferredencoding
 from enum import Enum
 from pathlib import Path
@@ -38,17 +37,6 @@ class _g():
     currentPath = None
     # Changes made to articleList that haven't been autosaved.
     changes = []
-    # Default method of sorting, to be performed when loading a file.
-    #  This can be overridden during programme usage, so can also act
-    #  as the "current" method of sorting".
-    sortMode = "timeAdded"
-    sortReverse = False  # Oldest to newest
-    sortKey = {"yja": (lambda a: (a["year"], a["journalLong"],
-                                    a["authors"][0]["family"])),
-               # that's year-journal-author.
-               "timeOpened": itemgetter("timeOpened"),
-               "timeAdded": itemgetter("timeAdded"),
-               }
 
     # History which allows undo.
     maxHistory = 5
@@ -73,12 +61,12 @@ class _g():
         try:
             subprocess.run(["defaults", "read", "-g", "AppleInterfaceStyle"],
                            stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL, check=True)
+                           stderr=subprocess.DEVNULL,
+                           check=True)
         except subprocess.CalledProcessError:
             darkmode = False
     # Colours for various stuff. Names should be self-explanatory.
-    def a(col):
-        return "\033[38;5;{}m".format(col)
+    a = lambda col: f"\033[38;5;{col}m"
     ptPurple  = "#e4b3ff" if darkmode else "#940172"
     ptPink    = "#f589d1" if darkmode else "#8629ab"
     ptGreen   = "#17cf48" if darkmode else "#2a731f"
@@ -171,106 +159,83 @@ class _g():
     }
 
 
+class _sort():
+    """
+    Class that handles sorting of the article list.
+    """
+    # Class attributes that determine the default way of sorting
+    mode = "time_added"
+    reverse = False  # Oldest to newest
+
+    @classmethod
+    def sort(cls, mode=None, reverse=None, set_mode=True):
+        """
+        Sorts _g.articleList in-place using the mode and reverse parameters.
+        If set_mode is True, additionally updates the class attributes, which
+        represent the currently active mode.
+        """
+        # Read in the class attributes if sorting method is not specified
+        if mode is None:
+            mode = cls.mode
+        if reverse is None:
+            reverse = cls.reverse
+        # Sort
+        if mode == "year":
+            # Year alone isn't enough to distinguish: so we use a combination
+            # of year, then journal article, then first author surname
+            _g.articleList.sort(key=lambda a: (a.year,
+                                               a.journal_long,
+                                               a.authors[0]["family"]),
+                                     reverse=reverse)
+        elif mode in ["time_opened", "time_added"]:
+            _g.articleList.sort(key=attrgetter(mode), reverse=reverse)
+        else:
+            raise ValueError(f"invalid sort mode '{mode}' given")
+        # Update the class attributes if necessary
+        if set_mode:
+            cls.mode, cls.reverse = mode, reverse
+
+
 class _ret(Enum):
     SUCCESS = 0
     FAILURE = 1
     pass
 
 
-class _progress():
-    """
-    Object for progress reporting of aiohttp reports.
-    """
-    def __init__(self, total, fstr=None):
-        self.total = total
-        self.fstr = fstr
-        self.current = 0
-
-    def incr(self, amount=1):
-        self.current += amount
-
-    def fmtCurrent(self):
-        return self.fstr.format(self.current) \
-            if self.fstr is not None \
-            else self.current
-
-    def fmtTotal(self):
-        return self.fstr.format(self.total) \
-            if self.fstr is not None \
-            else self.total
-
-
-async def _spinner(message, prog=None, units=""):
-    """
-    Fancy spinner to report on progress. Code lifted from Fluent Python with
-    some extra processing.
-    """
-    t = 0
-    write = sys.stdout.write
-    flush = sys.stdout.flush
-    for c in cycle("|/-\\"):
-        try:
-            if prog is None:
-                msg = f"{c} {message}..."
-            else:
-                msg = (f"{c} {message}... "
-                       f"({prog.fmtCurrent()}/{prog.fmtTotal()}"
-                       f"{' ' if units else ''}{units}) ")
-            write(msg)
-            flush()
-            await asyncio.sleep(0.1)
-            t += 0.1
-            write('\x08' * len(msg))
-            flush()
-        except asyncio.CancelledError:
-            write('\x08' * len(msg))
-            flush()
-            c = '-'
-            if prog is None:
-                msg = f"{c} {message}... Done."
-            else:
-                msg = (f"{c} {message}... "
-                       f"({prog.fmtCurrent()}/{prog.fmtTotal()}"
-                       f"{' ' if units else ''}{units}) ")
-            write(msg)
-            print()
-            break
-
-
 def _helpdeco(fn):
     """
-    Decorator which makes the function take a parameter 'help'. If this is
+    Decorator which makes the function or coroutine take a parameter 'help'. If
     True, then the function prints its docstring and exits immediately.
     """
+    # For ordinary functions
     @wraps(fn)
-    def helpfulFn(*args, help=False, **kwargs):
+    def helpful(*args, help=False, **kwargs):
         if help:
-            print("{}{}{}".format(_g.ansiHelpYellow,
-                                  fn.__doc__,
-                                  _g.ansiReset))
+            print(f"{_g.ansiHelpYellow}{fn.__doc__}{_g.ansiReset}")
             return _ret.SUCCESS
         else:
             return fn(*args, **kwargs)
-    return helpfulFn
-
-
-def _asynchelpdeco(fn):
-    """_helpdeco, just for async coroutines."""
+    # For coroutines
     @wraps(fn)
-    async def helpfulAsyncFn(*args, help=False, **kwargs):
-        if help is True:
-            print("{}{}{}".format(_g.ansiHelpYellow,
-                                  fn.__doc__,
-                                  _g.ansiReset))
+    async def helpful_crt(*args, help=False, **kwargs):
+        if help:
+            print(f"{_g.ansiHelpYellow}{fn.__doc__}{_g.ansiReset}")
             return _ret.SUCCESS
         else:
             return await fn(*args, **kwargs)
-    return helpfulAsyncFn
+    # Return the appropriate one
+    if asyncio.iscoroutinefunction(fn):
+        return helpful_crt
+    else:
+        return helpful
 
 
 def _timedeco(fn):
     """
     Decorator which prints time elapsed for a function call.
+
+    This isn't used anymore (was mainly used for development), but we keep it
+    here just in case.
     """
     @wraps(fn)
     def timedFn(*args, **kwargs):
@@ -280,24 +245,6 @@ def _timedeco(fn):
                                                    (time() - now) * 1000))
         return rval
     return timedFn
-
-
-def _asynctimedeco(fn):
-    """
-    Decorator which prints time elapsed for an async function to run to completion.
-
-    Note that using this decorator effectively makes the function block until it has
-     finished, i.e. it makes it no longer actually async!!
-    It's only useful for profiling timings
-    """
-    @wraps(fn)
-    async def timer(*args, **kwargs):
-        now = time()
-        rval = await fn(*args, **kwargs)
-        _debug("{}: time elapsed: {:.3f} ms".format(fn.__name__,
-                                                   (time() - now) * 1000))
-        return rval
-    return timer
 
 
 def _error(msg):

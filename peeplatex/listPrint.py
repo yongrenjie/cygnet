@@ -92,7 +92,7 @@ def print_list_article(article, refno, field_sizes, max_auth):
     author_column = article.format_authors(style="display")
     # Truncate author lists depending on max_auth
     if max_auth > 0 and len(author_column) > max_auth:
-        author_column = [*author_column[:max_auth - 3],
+        author_column = [*author_column[:max_auth - 2],
                          "...",
                          author_column[-1]]
     # 3. Year column: just one piece of information
@@ -125,8 +125,6 @@ def print_list_article(article, refno, field_sizes, max_auth):
     # Print blank line for readability
     print()
 
-
-# Utility functions
 
 def get_field_sizes(articles, refnos, padding=2):
     """

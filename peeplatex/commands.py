@@ -19,15 +19,15 @@ import yaml
 import prompt_toolkit as pt
 
 from . import fileio
-from . import peepdoi
 from . import listprint
+from . import peeparticle
 from . import refMgmt
 from . import backup
+from . import peepspin
 from ._shared import *
 
 
 @_helpdeco
-@_timedeco
 def cli_cd(args):
     """
     *** cd ***
@@ -64,14 +64,14 @@ def cli_cd(args):
     # Otherwise, save the previous article list first (if there is any)
     if _g.articleList and _g.currentPath and _g.changes != []:
         _g.changes = []
-        fileio.write_articles(_g.articleList, _g.currentPath)
+        fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
 
     # Change the path
     _g.currentPath = p
 
     # Try to read in the yaml file, if it exists
     try:
-        new_articles = fileio.read_articles(p)
+        new_articles = fileio.read_articles(p / "db.yaml")
     except yaml.YAMLError:
         _error(f"cd: A db.yaml file was found in {p}, "
                "but it contained invalid YAML.")
@@ -82,14 +82,13 @@ def cli_cd(args):
         # Load those new articles
         _g.articleList = new_articles
         backup.createBackup()
-        sortArticleList()  # TODO remove reference to sortArticleList()
+        _sort.sort()  # sort according to currently active mode
     finally:
         _clearHist()
         return _ret.SUCCESS
 
 
 @_helpdeco
-@_timedeco
 def cli_write(args):
     """
     *** write ***
@@ -106,7 +105,7 @@ def cli_write(args):
     that in practice the need for this function should not arise often.
     """
     if _g.articleList != []:
-        fileio.write_articles(_g.articleList, _g.currentPath)
+        fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
         _g.changes = []
     else:
         return _error("write: no articles loaded")
@@ -114,7 +113,6 @@ def cli_write(args):
 
 
 @_helpdeco
-@_timedeco
 def cli_list(args):
     """
     *** list ***
@@ -166,7 +164,6 @@ def cli_list(args):
 
 
 @_helpdeco
-@_timedeco
 def cli_open(args):
     """
     *** open ***
@@ -249,8 +246,7 @@ def cli_open(args):
     return _ret.SUCCESS
 
 
-@_asynchelpdeco
-@_timedeco
+@_helpdeco
 async def cli_cite(args):
     """
     *** cite ***
@@ -321,167 +317,151 @@ async def cli_cite(args):
     return _ret.SUCCESS
 
 
-# TODO: refactor the rest
-
 @_helpdeco
-@_timedeco
-def editRef(args):
+def cli_edit(args):
     """
-    Usage: e[dit] refno[...]
+    *** edit ***
 
+    Usage
+    -----
+    e[dit] refno[...]
+
+    Description
+    -----------
     Directly edit the entries for one or more citations, using vim. To cancel
     any changes made, exit vim using :cq.
 
     At least one refno must be specified. For more details about the format in
     which refnos are specified, type 'h list'.
-
-    ** Function details **
-    This is a function which is only meant to be invoked from the command-line.
-
-    Arguments:
-        args: List of command-line arguments.
-
-    Returns:
-        Return codes as defined in _ret.
     """
+    # Argument parsing
     if _g.articleList == []:
-        return _error("editRef: no articles have been loaded")
+        return _error("edit: no articles have been loaded")
     if args == []:
-        return _error("editRef: no references selected")
+        return _error("edit: no references selected")
 
-    # no formats to process; just refnos
-    refnos = refMgmt.parseRefno(",".join(args))
-    # Check the returned values
-    ls = len(_g.articleList)
-    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
-        return _error("editRef: invalid argument{} '{}' given".format(_p(args),
-                                                                      " ".join(args)))
+    try:
+        refnos = parse_refnos(args)
+    except ArgumentError as e:
+        return _error(f"edit: {str(e)}")
+    if len(refnos) == 0:
+        return _error("edit: no references selected")
 
-    # Construct the initial message
-    articlesToEdit = []
-    for r in refnos:
-        articlesToEdit.append(deepcopy(_g.articleList[r - 1]))
     # Create and write data to temp file.
     # Suffix is needed so that vim syntax highlighting is enabled. :)
-    fname = NamedTemporaryFile(suffix=".yaml").name
-    with open(fname, 'wb') as fp:
-        yaml.dump_all(articlesToEdit, fp, encoding=_g.gpe)
-    # Open the file in vim. Vim's stdin and stdout need to be from/to a terminal.
+    tempfile = Path(NamedTemporaryFile(suffix=".yaml").name)
+    articles_to_edit = [_g.articleList[r - 1] for r in refnos]
+    fileio.write_articles(articles_to_edit, tempfile)
+    # Open the file in vim. Vim's stdin and stdout need to be from/to a tty.
     # This is already the case for stdin, but we need to set stdout manually.
     try:
-        subprocess.run(["vim", fname], stdout=open('/dev/tty', 'wb'), check=True)
+        subprocess.run(["vim", str(tempfile)],
+                       stdout=open('/dev/tty', 'wb'),
+                       check=True)
     except subprocess.CalledProcessError:   # e.g. :cq
-        return _error("editRef: vim quit unexpectedly; no changes made")
+        return _error("edit: vim quit unexpectedly; no changes made")
     else:
-        # Put the edited metadata back in the article list. If changes have been 
-        #  made, increment _g.changes to trigger autosave.
-        with open(fname, "r") as fp:
-            try:
-                editedArticles = list(yaml.safe_load_all(fp))
-            except yaml.YAMLError:
-                return _error("editRef: invalid YAML syntax")
-            for (a, r) in zip(editedArticles, refnos):
-                if _g.articleList[r - 1] != a:
-                    _g.articleList[r - 1] = deepcopy(a)
-                    _g.changes += ["edit"]
+        # Put the edited metadata back in the article list and trigger autosave
+        try:
+            edited_articles = fileio.read_articles(tempfile)
+        except yaml.YAMLError:
+            return _error("edit: invalid YAML syntax for PeepLaTeX "
+                          "articles")
+        for (a, r) in zip(edited_articles, refnos):
+            _g.articleList[r - 1] = a
+            _g.changes += ["edit"]
         return _ret.SUCCESS
 
 
-@_asynchelpdeco
-@_timedeco
-async def addRef(args):
+@_helpdeco
+async def cli_add(args):
     """
-    Usage: a[dd] DOI[...]
+    *** add ***
 
+    Usage
+    -----
+    a[dd] DOI[...]
+
+    Description
+    -----------
     Adds one or more DOIs to the reference list. Separate DOIs must be
     separated by spaces. After the reference is added, the list is sorted
     again using the currently active sorting method.
 
-    Uses the Crossref API to obtain metadata about an article. Unfortunately,
-    this isn't smart enough (yet) to get the PDF directly from the Internet.
-
-    ** Function details **
-    This should only be invoked via the command-line.
-
-    Arguments:
-        args: List of command-line arguments.
-
-    Returns:
-        A tuple, containing number of DOIs added and number of DOIs not added.
+    Uses the Crossref API to obtain metadata about an article.
     """
+    # TODO automatically try to fetch pdf???
+
+    # Argument parsing
     if args == []:
         return _error("addRef: no DOIs provided")
     yes = 0
     no = 0
-
     # Check if any are already in the library
     dois = []
     for doi in args:
         found = False
-        for r, art in enumerate(_g.articleList, start=1):
-            if doi == art["doi"]:
+        for refno, article in enumerate(_g.articleList, start=1):
+            if doi == article.doi:
                 found = True
                 break
         if found:
-            _error("addRef: DOI '{}' already in library.\n".format(doi) + \
-                   "               Use 'u[pdate] {}' to refresh metadata.".format(r))
+            _error(f"add: DOI '{doi}' already in library.\n"
+                   f"        Use 'u[pdate] {refno}' to refresh metadata.")
             no += 1
         else:
             dois.append(doi)
     if dois == []:
         return
 
-    # create spinner
-    prog = _progress(len(dois))
-    spin = asyncio.create_task(_spinner("Fetching metadata", prog))
+    articles = []
+    coroutines = [peeparticle.doi_to_article_cr(doi, _g.ahSession)
+                  for doi in dois]
+    async with peepspin.Spinner(message="Fetching metadata...",
+                                total=len(dois)) as spinner:
+        for crt in asyncio.as_completed(coroutines):
+            articles.append(await crt)
+            spinner.increment(1)
 
-    # Perform asynchronous HTTP requests
-    arts = []
-    crefCoros = [peepdoi.to_article_cr(doi, _g.ahSession) for doi in dois]
-    for coro in asyncio.as_completed(crefCoros):
-        arts.append(await coro)
-        prog.incr(1)
-    # Kill spinner, and actually wait for it to be killed, otherwise
-    # the output below gets messed up terribly
-    spin.cancel()
-    await asyncio.sleep(0)
-
-    for a in arts:
+    for article in articles:
         # Check for failure
-        if a["title"] is None:
-            _error("addRef: invalid DOI '{}'".format(a["doi"]))
+        if article.title is None:
+            _error(f"add: invalid DOI '{article.doi}'")
             no += 1
             continue
         else:
-            a["timeAdded"] = datetime.now(timezone.utc)
-            a["timeOpened"] = datetime.now(timezone.utc)
+            article.time_added = datetime.now(timezone.utc)
+            article.time_opened = datetime.now(timezone.utc)
             # Prompt user whether to accept the article
-            refMgmt.diffArticles({}, a)
-            msg = "addRef: accept new data (y/n)? ".format()
+            peeparticle.diff_articles(peeparticle.Article(), article)
+            msg = "add: accept new data (y/n)? ".format()
             style = pt.styles.Style.from_dict({"prompt": _g.ptBlue, "": _g.ptGreen})
             try:
                 ans = await pt.PromptSession().prompt_async(msg, style=style)
             except (EOFError, KeyboardInterrupt):
                 ans = "no"
             if ans.strip().lower() in ["", "y", "yes"]:
-                _g.articleList.append(a)
-                print("addRef: added DOI '{}'".format(doi))
+                _g.articleList.append(article)
+                print(f"add: added DOI {article.doi}")
                 yes += 1
             else:
-                print("addRef: DOI {} not added".format(doi))
+                print(f"add: DOI {article.doi} not added")
                 no += 1
 
-    print("addRef: {} DOIs added, {} failed".format(yes, no))
+    print(f"add: {yes} DOIs added, {no} failed")
     _g.changes += ["add"] * yes
-    sortArticleList()
+    _sort.sort()  # Sort according to the currently active mode
     return yes, no
 
 
 @_helpdeco
-@_timedeco
-def sortArticleList(args=None):
+def cli_sort(args):
     """
-    Usage: so[rt] [mode]
+    *** sort ***
+
+    Usage
+    -----
+    so[rt] [mode]
 
     Sorts the currently loaded database. The key by which to sort can be
     passed as the only option. The available modes are:
@@ -495,106 +475,46 @@ def sortArticleList(args=None):
     an article, this will always be "year", but when calling 'so <key>', the
     requested key will be stored as the current sorting mode.
 
+    To query the current sorting mode, use `so[rt] ?`.
+
     By default, articles are sorted from oldest to newest, such that the most
     recent articles always appear at the bottom of the list (i.e. easiest to
     see). Reverse sort can be performed by capitalising the first letter of
     the key passed as a command-line argument, e.g. 'so Y' to sort from newest
     to oldest.
-
-    ** Function details **
-    This sorts the global list _g.articleList in-place. If no argument is
-    passed, it uses _g.sortMode and _g.sortReverse as the sort arguments.
-
-    If you want to sort a copy of a list without modifying it, you shoulduse
-    sortCopyArticles().
-
-    Arguments:
-        args: list of command-line arguments
-
-    Returns:
-        Return codes as defined in _ret.
     """
-    # Argument processing
-    if args is None or args == [] or args[0] == "":
-        mode, reverse = _g.sortMode, _g.sortReverse
+    # Argument parsing
+    if _g.articleList == []:
+        return _error("sort: no articles have been loaded")
+    if args == []:
+        mode, reverse = None, None
+    elif args[0] == "?":
+        print(_sort.mode + (", reverse" if _sort.reverse else ""))
+        return _ret.SUCCESS
     else:
         # Pick out capital letter, then convert to lowercase
         reverse = True if args[0][0].isupper() else False
         args[0] = args[0].lower()
         # Choose sorting mode
-        if args[0] in ["y", "yja", "year"]:  # default
-            mode = "yja"
+        if args[0] in ["y", "ye", "yea", "year"]:
+            mode = "year"
         elif args[0] in ["o", "op", "ope", "open", "opened", "timeopened"]:
-            mode = "timeOpened"
+            mode = "time_opened"
         elif args[0] in ["a", "ad", "add", "added", "timeadded"]:
-            mode = "timeAdded"
+            mode = "time_added"
         else:
-            return _error("sortArticleList: invalid sort mode '{}' provided".format(args[0]))
-        # Set the current sorting mode
-        _g.sortMode, _g.sortReverse = mode, reverse
-    if _g.articleList == []:
-        return _error("sortArticleList: no articles have been loaded")
-
-    # Sort in place
-    _g.articleList.sort(key=_g.sortKey[mode], reverse=reverse)
+            mode = args[0]
+    # Sort
+    try:
+        _sort.sort(mode, reverse)
+    except ValueError as e:   # invalid mode
+        return _error(f"sort: {str(e)}")
     # Trigger autosave
     _g.changes += ["sort"]
     return _ret.SUCCESS
 
 
-@_timedeco
-def sortCopyArticles(articles=None, refnos=None, mode=None, reverse=None):
-    """
-    ** Function details **
-
-    Sorts a list of articles and refnos by the given mode. This function makes
-    a copy of the lists, so the original lists are not mutated. This is useful
-    for generating input to listArticles(), which zips the two lists up before
-    printing them.
-
-    Arguments:
-        articles: list of articles to be sorted. Defaults to _g.articleList
-                  (but this makes a copy, so it doesn't get modified).
-        refnos  : reference numbers corresponding to the articles. Defaults to
-                  range(1, len(articles) + 1).
-        mode    : mode to sort by. The allowed values are the keys of
-                  _g.sortKey, which right now are "yja", "timeOpened", and
-                  "timeAdded". Defaults to _g.sortMode.
-        reverse : whether to sort in ascending order (True) or descending
-                  (False). Defaults to _g.sortReverse.
-
-    Returns:
-        (articles, refnos): Sorted articles and refnos.
-    """
-    # Argument processing
-    if articles is None:
-        articles = _g.articleList
-    if refnos is None:
-        refnos = range(1, len(articles) + 1)
-    if len(articles) != len(refnos):
-        return _error("sortCopyArticles: articles and refnos "
-                      "have different lengths ({} and {})".format(len(articles),
-                                                                  len(refnos)))
-    if mode is None:
-        mode = _g.sortMode
-    try:
-        # Because we're sorting tuples, we need to apply _g.sortKey[mode] to
-        # the first element of the tuple, hence the added complexity.
-        key = (lambda t: _g.sortKey[mode](t[0]))
-    except KeyError:
-        return _error("sortCopyArticles: invalid mode '{}' provided".format(mode))
-    if reverse is None:
-        reverse = _g.sortReverse
-
-    # Copy and sort the list
-    arts = deepcopy(articles)
-    refnos = deepcopy(refnos)  # this is probably overkill, but might as well
-    arts, refnos = zip(*sorted(zip(arts, refnos), key=key, reverse=reverse))
-    return (arts, refnos)
-
-
-@_asynchelpdeco
-@_timedeco
+@_helpdeco
 async def updateRef(args):
     """
     Usage: u[pdate] refno[...]
@@ -690,8 +610,7 @@ async def updateRef(args):
     return _ret.SUCCESS
 
 
-@_asynchelpdeco
-@_timedeco
+@_helpdeco
 async def deleteRef(args):
     """
     Usage: d[elete] refno[...]
@@ -745,8 +664,7 @@ async def deleteRef(args):
     return _ret.SUCCESS
 
 
-@_asynchelpdeco
-@_timedeco
+@_helpdeco
 async def importPDF(args=None):
     """
     Usage: i[mport] path[...]
@@ -816,8 +734,7 @@ async def importPDF(args=None):
     return yes, no
 
 
-@_asynchelpdeco
-@_timedeco
+@_helpdeco
 async def addPDF(args):
     """
     Usage: addpdf (or ap) refno[...]
@@ -910,8 +827,7 @@ async def addPDF(args):
     return _ret.SUCCESS
 
 
-@_asynchelpdeco
-@_timedeco
+@_helpdeco
 async def deletePDF(args, silent=False):
     """
     Usage: deletepdf (or dp) refno[...]
@@ -1025,8 +941,7 @@ async def deletePDF(args, silent=False):
     return _ret.SUCCESS
 
 
-@_asynchelpdeco
-@_timedeco
+@_helpdeco
 async def fetchPDF(args):
     """
     Usage: f[etch] refno[...]
@@ -1096,8 +1011,6 @@ async def fetchPDF(args):
     print("fetchPDF: {} PDFs successfully fetched, {} failed".format(yes, no))
     return _ret.SUCCESS
 
-
-# New stuff related to refactoring...
 
 class ArgumentError(Exception):
     """
@@ -1214,7 +1127,7 @@ def parse_formats(args, abbrevs=None):
     # Handle long forms by converting them to their short forms
     if abbrevs is not None:
         for short, long in abbrevs.items():
-            s.replace(long, short)
+            s = s.replace(long, short)
     # Pick out the alphabetical characters in the string
     t = set()
     try:
@@ -1250,8 +1163,8 @@ def parse_refnos_formats(args, abbrevs=None):
     # Check for 'all' or 'last' -- this makes our job substantially easier
     # because it is the refno and everything else is the format
     if args[0] in ["all", "last", "latest"]:
-        arg_refno = args[0]
-        arg_format = ",".join(args[1:])
+        arg_refno = args[:1]
+        arg_format = args[1:]
     # Otherwise we have to do it the proper way
     else:
         # Preprocess args

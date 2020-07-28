@@ -33,6 +33,21 @@ class Article():
         self.time_added = time_added
         self.time_opened = time_opened
 
+    def __eq__(self, other):
+        if not isinstance(other, Article):
+            return NotImplemented
+        # Compare attributes one by one, except for time_added and time_opened
+        return (self.title == other.title
+                and self.authors == self.authors
+                and self.journal_long == other.journal_long
+                and self.journal_short == other.journal_short
+                and self.journal_short == other.journal_short
+                and self.year == other.year
+                and self.volume == other.volume
+                and self.issue == other.issue
+                and self.pages == other.pages
+                and self.doi == other.doi)
+
     def format_authors(self, style):
         """
         Convert author names to a suitable format.
@@ -44,9 +59,11 @@ class Article():
                              - "display": "JRJ Yong"
                              - "acs"    : "Yong, J. R. J."
                              - "bib"    : "Yong, Jonathan R. J."
+                             - "full"   : given + family concatenated
 
         Returns:
             A list of appropriately formatted strings, one for each author.
+            None if self.authors is None.
 
         Raises:
             ValueError if the requested style does not exist.
@@ -72,11 +89,14 @@ class Article():
             elif style == "bib":
                 s = author["family"] + ", " + author["given"]
                 return s.replace(". ", ".\\ ")  # Must use control spaces
+            elif style == "full":
+                return author["given"] + " " + author["family"]
             # Otherwise, grumble.
             else:
                 raise ValueError(f"Invalid value '{style}' for style.")
 
-        return [format_one_author(author, style) for author in self.authors]
+        if self.authors is not None:
+            return [format_one_author(author, style) for author in self.authors]
 
     def format_short_journalname(self):
         """
@@ -102,7 +122,7 @@ class Article():
         and returns the string "vol (issue), page-page", or "vol, page-page" if
         no issue number is present.
         """
-        if self.issue != "":
+        if self.issue is not None:
             return "{} ({}), {}".format(self.volume,
                                         self.issue,
                                         self.pages)
@@ -250,6 +270,57 @@ class Article():
             raise ValueError("Invalid citation type '{type}' given")
 
 
+def diff_articles(aold, anew):
+    """
+    Compare metadata of two Articles.
+
+    The proposed change is aold -> anew, i.e. aold is being replaced with anew.
+
+    This function returns the number of attributes for which the two Articles'
+    values differ. But it also prints coloured output showing what data is going
+    to be removed / added. It's designed to be similar to git diff, except that
+    a more nuanced shade of red is used (to avoid confusion with errors), and a
+    more turquoise shade of green is used (to avoid confusion with the prompt).
+
+    Returns: None.
+    """
+    if not isinstance(aold, Article) or not isinstance(anew, Article):
+        raise TypeError("Arguments to diff_articles() must be "
+                        "Article instances.")
+
+    # Compare all attributes except for time added and opened
+    attribs = sorted(set(vars(aold)) - {"time_added", "time_opened"})
+    # Get field width (for pretty printing)
+    maxlen = max(len(attrib) for attrib in attribs)
+    # Check individual keys
+    for attrib in attribs:
+        # We need to convert authors to a string
+        if attrib == "authors":
+            if aold.authors is not None:
+                old_value = ", ".join(aold.format_authors("full"))
+            else:
+                old_value = None
+            if anew.authors is not None:
+                new_value = ", ".join(anew.format_authors("full"))
+            else:
+                new_value = None
+        # Other attributes can be accessed via the dict
+        else:
+            old_value = vars(aold)[attrib]
+            new_value = vars(anew)[attrib]
+        # Compare them
+        if old_value is not None and old_value == new_value:
+            print(f"{attrib:>{maxlen}}: {old_value}")
+        else:
+            if old_value is not None:
+                print(f"{attrib:>{maxlen}}: "
+                      f"{_g.ansiDiffRed}- {old_value}{_g.ansiReset}")
+                attrib = ""  # avoid printing the attribute name twice
+            if new_value is not None:
+                print(f"{attrib:>{maxlen}}: "
+                      f"{_g.ansiDiffGreen}+ {new_value}{_g.ansiReset}")
+
+
 def doi_to_citation(doi, type):
     """
     Generates a citation from a DOI via an Article instance.
@@ -357,19 +428,25 @@ async def doi_to_article_cr(doi, client_session=None):
             if f".{i}." in article.title:
                 article.title = article.title.replace(f".{i}.", _g.greek2Unicode[i])
 
+        # Volume
         try:
             article.volume = int(d["volume"])
         except KeyError:   # no volume
-            article.volume = ""
+            pass
         except ValueError:  # it's a range (!!!)
             article.volume = d["volume"]
+        # Issue
         try:
             article.issue = int(d["issue"])
         except KeyError:   # no issue
-            article.issue = ""
+            pass
         except ValueError:  # it's a range (!!!)
             article.issue = d["issue"]
-        article.pages = d["page"] if "page" in d else ""
+        # Pages
+        try:
+            article.pages = d["page"]
+        except KeyError:
+            pass
     finally:
         # If the ClientSession instance wasn't provided, close it.
         if client_session is None:

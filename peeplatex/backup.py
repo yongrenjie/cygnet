@@ -22,43 +22,45 @@ async def autosave():
     _g.articleList to _g.currentPath.
     """
     interval = 2
-    while True:
-        try:
+    try:
+        while True:
             await asyncio.sleep(interval)
             l = len(_g.changes)
             if _g.articleList and _g.currentPath and l != 0:
                 _debug(f"autosave: found {l} change{_p(l)}: "
                        f"{' '.join(_g.changes)}")
-                fileio.write_articles(_g.articleList, _g.currentPath)
+                fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
                 _debug("autosave complete")
                 _g.changes = []
-        except asyncio.CancelledError:
-            break
+    except asyncio.CancelledError:
+        # If the program is quit, save one last time before exiting
+        fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
+        _debug("exit save complete, exiting autosave task")
 
 
-def createBackup():
+def create_backup():
     """
     Saves _g.articleList to the backups folder if it's different from the
     previous backup.
     """
-    maxBackups = 5
+    max_backups = 5
 
-    if maxBackups == 0:
+    if max_backups == 0:
         return
     if _g.articleList != [] and _g.currentPath is not None:
         dbName = _g.currentPath.name
         # Figure out the folder name
-        backupFolder = _g.currentPath / "backups"
-        if not backupFolder.exists():
-            backupFolder.mkdir()
+        backup_folder = _g.currentPath / "backups"
+        if not backup_folder.exists():
+            backup_folder.mkdir()
         # Create the backup file
         now = datetime.now().strftime(".%y%m%d_%H%M%S")
-        fname = backupFolder / (dbName + now)
-        fileio.write_articles(_g.articleList, backupFolder, (dbName + now))
+        backup_fname = backup_folder / (dbName + now)
+        fileio.write_articles(_g.articleList, backup_fname)
         _debug("created backup file")
 
         # Create list of all backup files; most recent is last
-        backups = sorted([p for p in backupFolder.iterdir()],
+        backups = sorted([p for p in backup_folder.iterdir()],
                          key=attrgetter('name'))
         # Check if the new backup is identical to the previous one. If so, we
         # delete the newest one instead of the oldest one.
@@ -67,9 +69,9 @@ def createBackup():
             backups[-1].unlink()
             backups.pop(-1)
             _debug("new backup is same, deleting it")
-        # Otherwise, delete the oldest backup(s) until there are only maxBackups
-        # backup files.
-        while len(backups) > maxBackups:
+        # Otherwise, delete the oldest backup(s) until there are only
+        # max_backups backup files.
+        while len(backups) > max_backups:
             _debug(f"deleting old backup {backups[0]}")
             backups[0].unlink()
             backups.pop(0)

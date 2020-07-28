@@ -1,4 +1,22 @@
 authors:
+- family: Bohlen
+  given: Jean-Marl
+- family: Rey
+  given: Martial
+- family: Bodenhausen
+  given: Geoffrey
+doi: 10.1016/0022-2364(89)90018-8
+issue: 1
+journal_long: Journal of Magnetic Resonance (1969)
+journal_short: J. Magn. Reson.
+pages: 191-197
+time_added: 2020-07-28 14:40:27.436736+00:00
+time_opened: 2020-07-28 14:40:27.436739+00:00
+title: Refocusing with chirped pulses for broadband excitation without phase dispersion
+volume: 84
+year: 1989
+---
+authors:
 - family: Power
   given: J. E.
 - family: Foroozandeh
@@ -18,11 +36,25 @@ issue: 14
 journal_long: Chemical Communications
 journal_short: Chem. Commun.
 pages: 2916-2919
-time_added: 2020-05-30 10:58:32.829060+00:00
-time_opened: 2020-07-26 17:49:06.995937+00:00
+time_added: 2020-07-28 14:40:14.269395+00:00
+time_opened: 2020-07-28 14:40:14.269397+00:00
 title: Increasing the quantitative bandwidth of NMR measurements
 volume: 52
 year: 2016
+---
+authors:
+- family: Khaneja
+  given: Navin
+doi: 10.1016/j.jmr.2017.07.003
+issue: null
+journal_long: Journal of Magnetic Resonance
+journal_short: J. Magn. Reson.
+pages: 32-36
+time_added: 2020-07-28 13:17:53.561032+00:00
+time_opened: 2020-07-28 13:17:53.561036+00:00
+title: Chirp excitation
+volume: 282
+year: 2017
 ---
 authors:
 - family: Foroozandeh
@@ -32,44 +64,12 @@ authors:
 - family: Morris
   given: Gareth A.
 doi: 10.1016/j.jmr.2019.03.007
-issue: ''
+issue: null
 journal_long: Journal of Magnetic Resonance
 journal_short: J. Magn. Reson.
 pages: 28-33
-time_added: 2020-05-30 10:58:37.479082+00:00
-time_opened: 2020-07-26 17:49:30.355035+00:00
+time_added: 2020-07-28 14:40:38.676374+00:00
+time_opened: 2020-07-28 14:40:38.676378+00:00
 title: Improved ultra-broadband chirp excitation
 volume: 302
 year: 2019
----
-authors:
-- family: Bohlen
-  given: Jean-Marl
-- family: Rey
-  given: Martial
-- family: Bodenhausen
-  given: Geoffrey
-doi: 10.1016/0022-2364(89)90018-8
-issue: 1
-journal_long: Journal of Magnetic Resonance (1969)
-journal_short: J. Magn. Reson.
-pages: 191-197
-time_added: 2020-05-30 10:59:58.448919+00:00
-time_opened: 2020-05-30 10:59:58.448922+00:00
-title: Refocusing with chirped pulses for broadband excitation without phase dispersion
-volume: 84
-year: 1989
----
-authors:
-- family: Khaneja
-  given: Navin
-doi: 10.1016/j.jmr.2017.07.003
-issue: ''
-journal_long: Journal of Magnetic Resonance
-journal_short: J. Magn. Reson.
-pages: 32-36
-time_added: 2020-06-19 19:14:23.815314+00:00
-time_opened: 2020-07-24 13:47:11.331769+00:00
-title: Chirp excitation
-volume: 282
-year: 2017

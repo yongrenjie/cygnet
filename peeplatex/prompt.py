@@ -137,7 +137,8 @@ class peepPrompt():
                                "zzzpeep"]:
                         break
                     elif cmd in ["c", "ci", "cit", "cite"]:          # CITE
-                        asyncio.create_task(commands.cli_cite(args, help=help))
+                        await commands.cli_cite(args, help=help)
+                        # asyncio.create_task(commands.cli_cite(args, help=help))
                     elif cmd in ["o", "op", "ope", "open"]:          # OPEN
                         commands.cli_open(args, help=help)
                     elif cmd in ["w", "wr", "wri", "writ",           # WRITE
@@ -150,11 +151,11 @@ class peepPrompt():
                     elif cmd in ["e", "ed", "edi", "edit"]:          # EDIT
                         if help is False:
                             _saveHist(cmd, args)
-                        commands.editRef(args, help=help)
+                        commands.cli_edit(args, help=help)
                     elif cmd in ["a", "ad", "add"]:                  # ADD
                         if help is False:
                             _saveHist(cmd, args)
-                        await commands.addRef(args, help=help)
+                        await commands.cli_add(args, help=help)
                     elif cmd in ["d", "de", "del", "dele",           # DELETE
                                  "delet", "delete"]:
                         if help is False:
@@ -170,7 +171,7 @@ class peepPrompt():
                     elif cmd in ["so", "sor", "sort"]:               # SORT
                         if help is False:
                             _saveHist(cmd, args)
-                        commands.sortArticleList(args, help=help)
+                        commands.cli_sort(args, help=help)
                     elif cmd in ["i", "im", "imp", "impo",           # IMPORT
                                  "impor", "import"]:
                         if help is False:

@@ -167,61 +167,6 @@ async def savePDF(path, doi, fmt):
             return _ret.SUCCESS
 
 
-def diffArticles(aold, anew):
-    """
-    Compare metadata of two articles. To be used when (e.g.) calling updateRef(),
-    so that the user can either accept or reject the changes.
-
-    The proposed change is aold -> anew, i.e. aold is being replaced with anew.
-
-    This function returns the number of keys for which the two dictionaries'
-    values differ. But it also prints coloured output showing what data is going
-    to be removed / added. It's designed to be similar to git diff, except that
-    a more nuanced shade of red is used (to avoid confusion with errors), and a
-    more turquoise shade of green is used (to avoid confusion with the prompt).
-    """
-    if aold == anew:
-        return 0
-    else:
-        ao = deepcopy(aold)
-        an = deepcopy(anew)
-        ndiff = 0
-        # Fix the author key. Everything else can just be autoconverted into
-        # strings.
-        if "authors" in ao:
-            ao.authors = ", ".join(ao.format_authors())
-        if "authors" in an:
-            an.authors = ", ".join(an.format_authors())
-        # Get the set of all items in ao and an
-        # Don't compare the timeAdded and timeOpened fields
-        allKeys = sorted((set(ao) | set(an)) - {"timeAdded", "timeOpened"})
-        # Get field width
-        maxlen = max(len(key) for key in allKeys)
-        # Check individual keys
-        for key in allKeys:
-            # Key is in both. We expect this to be the case most of the time.
-            if key in ao and key in an:
-                if ao[key] == an[key]:
-                    print("{:>{}}: {}".format(key, maxlen, ao[key]))
-                else:
-                    ndiff += 1
-                    print("{:>{}}: {}- {}{}".format(key, maxlen, _g.ansiDiffRed,
-                                                    ao[key], _g.ansiReset))
-                    print("{:>{}}  {}+ {}{}".format("", maxlen, _g.ansiDiffGreen,
-                                                    an[key], _g.ansiReset))
-            # Key is in ao only, i.e. it is being removed.
-            elif key in ao and key not in an:
-                ndiff += 1
-                print("{:>{}}: {}- {}{}".format(key, maxlen, _g.ansiDiffRed,
-                                                ao[key], _g.ansiReset))
-            # Key is in an only, i.e. it is being added.
-            elif key not in ao and key in an:
-                ndiff += 1
-                print("{:>{}}: {}+ {}{}".format(key, maxlen, _g.ansiDiffGreen,
-                                                an[key], _g.ansiReset))
-        return ndiff
-
-
 def PDFToDOI(path):
     """
     Attempts to extract a DOI from a PDF.
@@ -366,4 +311,3 @@ async def DOIToFullPDFURL(doi, session):
         return (doi, publisherFmtStrings[publisher].format(identifier))
     else:
         return (doi, _error("DOIToFullPDFURL: could not find full text for doi {}".format(doi)))
-
