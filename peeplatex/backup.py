@@ -26,7 +26,7 @@ async def autosave():
         while True:
             await asyncio.sleep(interval)
             l = len(_g.changes)
-            if _g.articleList and _g.currentPath and l != 0:
+            if len(_g.articleList) != 0 and l != 0:
                 _debug(f"autosave: found {l} change{_p(l)}: "
                        f"{' '.join(_g.changes)}")
                 fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
@@ -34,8 +34,9 @@ async def autosave():
                 _g.changes = []
     except asyncio.CancelledError:
         # If the program is quit, save one last time before exiting
-        fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
-        _debug("exit save complete, exiting autosave task")
+        if len(_g.articleList) != 0:
+            fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
+            _debug("exit save complete, exiting autosave task")
 
 
 def create_backup():

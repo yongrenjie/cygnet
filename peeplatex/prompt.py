@@ -27,10 +27,8 @@ class peepPrompt():
     })
     def make_message(self):
         # Construct nice form of _g.currentPath..
-        path = str(_g.currentPath) if _g.currentPath is not None else ""
-        path = path.replace(str(Path.home()), "~")
-        path = f"({path}) " if path else ""
-        msg = [("class:path"  , path),
+        path = str(_g.currentPath.resolve()).replace(str(Path.home()), "~")
+        msg = [("class:path"  , f"({path}) "),
                ("class:peep", "peep > ")]
         return msg
 
@@ -160,12 +158,12 @@ class peepPrompt():
                                  "delet", "delete"]:
                         if help is False:
                             _saveHist(cmd, args)
-                        await commands.deleteRef(args, help=help)
+                        await commands.cli_delete(args, help=help)
                     elif cmd in ["u", "up", "upd", "upda",           # UPDATE
                                  "updat", "update"]:
                         if help is False:
                             _saveHist(cmd, args)
-                        await commands.updateRef(args, help=help)
+                        await commands.cli_update(args, help=help)
                     elif cmd in ["s", "se", "search"]:               # SEARCH
                         _error("it's not been implemented yet...")
                     elif cmd in ["so", "sor", "sort"]:               # SORT

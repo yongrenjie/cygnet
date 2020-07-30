@@ -8,6 +8,7 @@ Also contains methods for generating an Article from a DOI using the Crossref AP
 
 import asyncio
 from unicodedata import normalize
+from operator import attrgetter
 
 import aiohttp
 from unidecode import unidecode
@@ -38,7 +39,7 @@ class Article():
             return NotImplemented
         # Compare attributes one by one, except for time_added and time_opened
         return (self.title == other.title
-                and self.authors == self.authors
+                and self.authors == other.authors
                 and self.journal_long == other.journal_long
                 and self.journal_short == other.journal_short
                 and self.journal_short == other.journal_short
@@ -138,12 +139,9 @@ class Article():
         Returns:
             A string with a green tick / red cross for 'pdf' and 'si' formats.
         """
-        types = ["pdf", "si"]
-        paths = [self.to_fname(type) for type in types]
-        symbols = ['\u2714' if path.is_file() else '\u2718'
-                   for path in paths]
-        colors = [_g.ansiDiffGreen if path.is_file() else _g.ansiDiffRed
-                  for path in paths]
+        exists = [self.to_fname(type).is_file() for type in ("pdf", "si")]
+        symbols = ['\u2714' if e else '\u2718' for e in exists]
+        colors = [_g.ansiDiffGreen if e else _g.ansiDiffRed for e in exists]
         return (f"{colors[0]}{symbols[0]}{_g.ansiReset}pdf  "
                 f"{colors[1]}{symbols[1]}{_g.ansiReset}si")
 
@@ -157,7 +155,7 @@ class Article():
                          "w" are allowed as well.
 
         Returns:
-            The filename or URL as a string.
+            The filename as a pathlib.Path object, or URL as a string.
 
         Raises:
             ValueError if the type parameter is not one of the above.
@@ -282,11 +280,16 @@ def diff_articles(aold, anew):
     a more nuanced shade of red is used (to avoid confusion with errors), and a
     more turquoise shade of green is used (to avoid confusion with the prompt).
 
-    Returns: None.
+    Returns: The number of differences found.
     """
     if not isinstance(aold, Article) or not isinstance(anew, Article):
         raise TypeError("Arguments to diff_articles() must be "
                         "Article instances.")
+
+    ndiffs = 0
+    # Check for equality first (don't need to print anything in this case)
+    if aold == anew:
+        return 0
 
     # Compare all attributes except for time added and opened
     attribs = sorted(set(vars(aold)) - {"time_added", "time_opened"})
@@ -306,12 +309,13 @@ def diff_articles(aold, anew):
                 new_value = None
         # Other attributes can be accessed via the dict
         else:
-            old_value = vars(aold)[attrib]
-            new_value = vars(anew)[attrib]
+            old_value = attrgetter(attrib)(aold)
+            new_value = attrgetter(attrib)(anew)
         # Compare them
         if old_value is not None and old_value == new_value:
             print(f"{attrib:>{maxlen}}: {old_value}")
         else:
+            ndiffs += 1
             if old_value is not None:
                 print(f"{attrib:>{maxlen}}: "
                       f"{_g.ansiDiffRed}- {old_value}{_g.ansiReset}")
@@ -319,6 +323,7 @@ def diff_articles(aold, anew):
             if new_value is not None:
                 print(f"{attrib:>{maxlen}}: "
                       f"{_g.ansiDiffGreen}+ {new_value}{_g.ansiReset}")
+    return ndiffs
 
 
 def doi_to_citation(doi, type):
@@ -381,7 +386,8 @@ async def doi_to_article_cr(doi, client_session=None):
     # to remember whether the ClientSession was provided: if it wasn't, then
     # we should close it at the end.
     if client_session is None:
-        session = aiohttp.ClientSession()
+        # Make sure we have a polite header, though.
+        session = aiohttp.ClientSession(headers=_g.httpHeaders)
     else:
         session = client_session
 

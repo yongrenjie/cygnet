@@ -1,5 +1,5 @@
 __all__ = ["_g", "_sort", "_ret",
-           "_helpdeco", "_timedeco", "_asynctimedeco",
+           "_helpdeco", "_timedeco",
            "_error", "_debug", "_p",
            "_copy", "_saveHist", "_clearHist", "_undo",
            ]
@@ -35,6 +35,8 @@ class _g():
     articleList = []
     # pathlib.Path object pointing to the current database.
     currentPath = None
+    # pathlib.Path object pointing to the previous path, allowing 'cd -'.
+    previousPath = None
     # Changes made to articleList that haven't been autosaved.
     changes = []
 
@@ -182,7 +184,7 @@ class _sort():
         # Sort
         if mode == "year":
             # Year alone isn't enough to distinguish: so we use a combination
-            # of year, then journal article, then first author surname
+            # of year, then journal title, then first author surname
             _g.articleList.sort(key=lambda a: (a.year,
                                                a.journal_long,
                                                a.authors[0]["family"]),

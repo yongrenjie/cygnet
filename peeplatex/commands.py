@@ -13,7 +13,7 @@ from pathlib import Path
 from copy import deepcopy
 from datetime import datetime, timezone
 from tempfile import NamedTemporaryFile
-from operator import itemgetter
+from operator import attrgetter
 
 import yaml
 import prompt_toolkit as pt
@@ -44,14 +44,20 @@ def cli_cd(args):
     When a new database is read in, the references will be sorted by year. The
     undo history will also be cleared.
     """
-    # Parse arguments as directory
-    try:
-        p = parse_directory(args)
-    except ArgumentError as e:
-        # If no arguments are provided, we default to user's home directory.
-        if args == []:
-            p = Path.home()
+    # Check for plain 'cd' which goes back to home directory.
+    if args == []:
+        p = Path.home()
+    # Check for 'cd -' which goes to previous path.
+    elif args == ["-"]:
+        if _g.previousPath is None:
+            return _error(f"cd: previous path not set")
         else:
+            p = _g.previousPath
+    # Otherwise, parse the arguments and take only the first
+    else:
+        try:
+            p = parse_paths(args)[0]
+        except ArgumentError as e:
             return _error(f"cd: {str(e)}")
 
     if not p.is_dir():
@@ -67,7 +73,7 @@ def cli_cd(args):
         fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
 
     # Change the path
-    _g.currentPath = p
+    _g.previousPath, _g.currentPath = _g.currentPath, p
 
     # Try to read in the yaml file, if it exists
     try:
@@ -367,8 +373,17 @@ def cli_edit(args):
         except yaml.YAMLError:
             return _error("edit: invalid YAML syntax for PeepLaTeX "
                           "articles")
-        for (a, r) in zip(edited_articles, refnos):
-            _g.articleList[r - 1] = a
+        for (edited_article, refno) in zip(edited_articles, refnos):
+            # Before replacing it, make sure that the PDF/SIs are moved to the
+            # correct location!!
+            types = ["pdf", "si"]
+            old_fnames = [_g.articleList[refno - 1].to_fname(t) for t in types]
+            new_fnames = [edited_article.to_fname(t) for t in types]
+            for old_fname, new_fname in zip(old_fnames, new_fnames):
+                if old_fname.is_file():
+                    old_fname.rename(new_fname)
+            # Ok, now we can replace it
+            _g.articleList[refno - 1] = edited_article
             _g.changes += ["edit"]
         return _ret.SUCCESS
 
@@ -515,160 +530,161 @@ def cli_sort(args):
 
 
 @_helpdeco
-async def updateRef(args):
+async def cli_update(args):
     """
-    Usage: u[pdate] refno[...]
+    *** update ***
 
+    Usage
+    -----
+    u[pdate] refno[...]
+
+    Description
+    -----------
     Update one or more references using the Crossref API. If any differences in
     the metadata are detected, then the user is prompted to accept or reject
     the changes before applying them to the database.
 
     At least one refno must be specified. For more details about the format in
     which refnos are specified, type 'h list'.
-
-    ** Function details **
-    This is only meant to be invoked from the command-line.
-
-    Arguments:
-        args: List of command-line options.
-
-    Returns:
-        Return codes as defined in _ret.
     """
+    # Argument processing
     if _g.articleList == []:
-        return _error("updateRef: no articles have been loaded")
-    if args == []:
-        return _error("updateRef: no references selected")
+        return _error("update: no articles have been loaded")
+    try:
+        refnos = parse_refnos(args)
+    except ArgumentError as e:
+        return _error(f"update: {str(e)}")
+    if len(refnos) == 0:
+        return _error("update: no references selected")
 
-    # no formats to process; just refnos
-    refnos = refMgmt.parseRefno(",".join(args))
-    # Check the returned values
-    ls = len(_g.articleList)
-    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
-        return _error("updateRef: invalid argument{} '{}' given".format(_p(args),
-                                                                        " ".join(args)))
-
-    # create spinner
-    prog = _progress(len(refnos))
-    spin = asyncio.create_task(_spinner("Fetching metadata", prog))
-
-    # Lists containing dictionaries of old and new articles. Since data is
-    # being pulled asynchronously, we need to be careful with the sorting. We
-    # first sort refnos & aolds by the DOI.
-    aolds = [_g.articleList[r - 1] for r in refnos]
-    anews = []
-    aolds, refnos = zip(*sorted(zip(aolds, refnos),
-                                key=(lambda t: t[0]["doi"])))
-
+    # Lists containing old and new Articles. Since data is being pulled
+    # asynchronously, we need to be careful with the sorting. Throughout this
+    # section we sort every list by the DOIs.
+    old_articles = [_g.articleList[r - 1] for r in refnos]
+    old_articles, refnos = zip(*sorted(zip(old_articles, refnos),
+                                       key=(lambda t: t[0].doi)))
+    crts = [peeparticle.doi_to_article_cr(article.doi, _g.ahSession)
+            for article in old_articles]
+    new_articles = []
     # Perform asynchronous HTTP requests
-    dois = [aold["doi"] for aold in aolds]
-    crefCoros = [peepdoi.to_article_cr(doi, _g.ahSession) for doi in dois]
-    for coro in asyncio.as_completed(crefCoros):
-        anews.append(await coro)
-        prog.incr(1)
-    # Kill spinner, and actually wait for it to be killed, otherwise
-    # the output below gets messed up terribly
-    spin.cancel()
-    await asyncio.sleep(0)
+    async with peepspin.Spinner(message="Fetching metadata...",
+                                total=len(refnos)) as spinner:
+        for crt in asyncio.as_completed(crts):
+            new_articles.append(await crt)
+            spinner.increment(1)
+    # After we finish pulling the new Articles, they are out of order. We can
+    # sort the new Articles by DOI to get the same ordering as the old Articles
+    # and refnos.
+    new_articles.sort(key=attrgetter("doi"))
+    # Now we sort everything by refnos so that we can present them nicely to
+    # the user.
+    refnos, old_articles, new_articles = zip(*sorted(zip(refnos,
+                                                         old_articles,
+                                                         new_articles)))
 
-    # After we finish pulling anews, it is out of order. We can sort anews by
-    # the DOI to get the same ordering as aolds and refnos. Then we re-sort
-    # everything by increasing refno so that we can present them to the user
-    # in increasing order of refno. But we deal with that later.
-    anews.sort(key=itemgetter("doi"))
-    # Because tuples are sorted by the first component, and refno's components
-    # are plain old ints, we don't need to specify a key.
-    refnos, aolds, anews = zip(*sorted(zip(refnos, aolds, anews)))
-
+    # Present them one by one to the user
     yes = 0
-    for r, aold, anew in zip(refnos, aolds, anews):
-        if anew["title"] is None:
-            _error("updateRef: ref {} has an invalid DOI '{}'".format(r, aold["doi"]))
+    for refno, old_article, new_article in zip(refnos,
+                                               old_articles,
+                                               new_articles):
+        if new_article.title is None:
+            _error(f"update: ref {refno} has invalid DOI '{old_article.doi}'")
+            continue
         # copy over timeAdded, timeOpened data from old reference
-        anew["timeAdded"] = aold["timeAdded"]
-        anew["timeOpened"] = aold["timeOpened"]
+        new_article.time_added = old_article.time_added
+        new_article.time_opened = old_article.time_opened
         # calculate and report differences
-        ndiffs = refMgmt.diffArticles(aold, anew)
+        ndiffs = peeparticle.diff_articles(old_article, new_article)
         if ndiffs == 0:
-            print("updateRef: no new data for ref {} found on Crossref".format(r))
+            print(f"update: ref {refno}: no new data found")
         else:
-            # Must use a new PromptSession().prompt_async(), otherwise it gets messed up.
-            msg = "updateRef: accept new data for ref {} (y/n)? ".format(r)
-            style = pt.styles.Style.from_dict({"prompt": _g.ptBlue, "": _g.ptGreen})
+            msg = f"update: ref {refno}: accept new data? (y/n) "
+            style = pt.styles.Style.from_dict({"prompt": _g.ptBlue,
+                                               "": _g.ptGreen})
             try:
                 ans = await pt.PromptSession().prompt_async(msg, style=style)
             except (EOFError, KeyboardInterrupt):
                 ans = "no"
             if ans.strip().lower() in ["", "y", "yes"]:
-                _g.articleList[r - 1] = anew
-                print("updateRef: successfully updated ref {}".format(r))
+                _g.articleList[refno - 1] = new_article
+                print(f"update: ref {refno}: successfully updated")
                 yes += 1
             else:  # ok, it isn't really (y/n), it's (y/not y)
-                print("updateRef: rejected changes for ref {}".format(r))
-    print("updateRef: {} article{} updated".format(yes, _p(yes)))
+                print(f"update: ref {refno}: changes rejected")
+    print(f"update: {yes} article{_p(yes)} updated")
     _g.changes += ["update"] * yes
     return _ret.SUCCESS
 
 
 @_helpdeco
-async def deleteRef(args):
+async def cli_delete(args):
     """
-    Usage: d[elete] refno[...]
+    *** delete ***
 
+    Usage
+    -----
+    d[elete] refno[...]
+
+    Description
+    -----------
     Deletes one or more references, as well as the PDFs associated with them.
-
-    ** Function details **
-    This is only meant to be invoked from the command-line.
-
-    Arguments:
-        args: List of command-line options.
-
-    Returns:
-        Return codes as defined in _ret.
     """
+    # Argument parsing
     if _g.articleList == []:
-        return _error("deleteRef: no articles have been loaded")
+        return _error("delete: no articles have been loaded")
     if args == []:
         return _error("deleteRef: no references selected")
-
-    # no formats to process; just refnos
-    refnos = refMgmt.parseRefno(",".join(args))
-    # Check the returned values
-    ls = len(_g.articleList)
-    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
-        return _error("deleteRef: invalid argument{} '{}' given".format(_p(args),
-                                                                        " ".join(args)))
+    try:
+        refnos = parse_refnos(args)
+    except ArgumentError as e:
+        return _error(f"delete: {str(e)}")
+    if len(refnos) == 0:
+        return _error("delete: no references selected")
 
     # Must use a new PromptSession().prompt_async(), otherwise it gets messed up.
     yes = 0
-    msg = "deleteRef: really delete ref{} {} (y/n)? ".format(_p(refnos),
-                                                             ", ".join(str(r) for r in refnos))
-    style = pt.styles.Style.from_dict({"prompt": _g.ptBlue, "": _g.ptGreen})
+    msg = (f"delete: really delete ref{_p(refnos)} "
+           f"{', '.join(str(r) for r in refnos)} (y/n)? ")
+    style = pt.styles.Style.from_dict({"prompt": _g.ptBlue,
+                                       "": _g.ptGreen})
     try:
         ans = await pt.PromptSession().prompt_async(msg, style=style)
     except (EOFError, KeyboardInterrupt):
         ans = "no"
     if ans.strip().lower() in ["", "y", "yes"]:
-        # Delete PDFs first.
-        await deletePDF(args, silent=True)
-        # Must sort the list in descending order so that you don't get earlier
-        #  deletions affecting later ones!!
+        # Sort refnos in descending order so that we don't have earlier
+        # deletions affecting later ones!!!
         refnos.sort(reverse=True)
-        for r in refnos:
-            del _g.articleList[r - 1]
+        for refno in refnos:
+            article = _g.articleList[refno - 1]
+            # Delete the PDFs first
+            pdf_paths = [article.to_fname(type) for type in ("pdf", "si")]
+            for pdf in pdf_paths:
+                if pdf.is_file():
+                    pdf.unlink()
+            # Then delete the article
+            del _g.articleList[refno - 1]
             yes += 1
-        print("deleteRef: {} ref{} deleted".format(yes, _p(yes)))
+        print(f"delete: {yes} ref{_p(yes)} deleted")
         _g.changes += ["delete"] * yes
     else:
-        print("deleteRef: no refs deleted")
+        print("delete: no refs deleted")
     return _ret.SUCCESS
 
 
-@_helpdeco
-async def importPDF(args=None):
-    """
-    Usage: i[mport] path[...]
+# TODO halfway refactoring cli_import.
 
+@_helpdeco
+async def cli_import(args=None):
+    """
+    *** import ***
+
+    Usage
+    -----
+    i[mport] path[...]
+
+    Description
+    -----------
     Import a PDF into the database. Automatically attempts to detect the DOI
     from the PDF and fetch the corresponding metadata. The paths provided can
     either be single PDF files, or folders containing multiple PDF files.
@@ -689,46 +705,40 @@ async def importPDF(args=None):
     """
     # Argument processing
     if args == []:
-        return _error("importPDF: no references selected")
+        return _error("import: no path(s) provided")
 
     # Get paths from the args.
-    paths = []
-    for arg in args:
-        p = Path(arg).resolve().expanduser()
-        # If it's a file, add it directly
-        if p.exists() and p.is_file():
-            paths.append(p)
-        # If it's a directory, add all the PDF files inside
-        elif p.exists() and p.is_dir():
-            paths += [f for f in p.iterdir() if f.suffix == ".pdf"]
-        else:
-            _error("importPDF: invalid path '{}' provided".format(arg))
+    paths = parse_path(args)
+    # Find directories and get files from them
+    dirs = [p for p in paths if p.is_dir()]
+    files = [p for p in paths if p.is_file()]
+    for dir in dirs:
+        files += [f for f in dir.iterdir() if f.suffix == ".pdf"]
 
     yes, no = 0, 0
     # Process every PDF file found.
-    for path in paths:
+    for file in files:
         # Try to get the DOI
-        doi = refMgmt.PDFToDOI(path)
+        doi = refMgmt.PDFToDOI(file)
         if doi == _ret.FAILURE:
             no += 1
         else:
-            print("importPDF: detected DOI {} for PDF '{}'".format(doi, path))
+            print(f"import: detected DOI {doi} for PDF '{file}'")
             # Check whether it's already in the database
-            for refno, a in enumerate(_g.articleList, start=1):
-                if doi == a["doi"]:
-                    _error("importPDF: DOI {} already in database. Use "
-                           "'ap {}' to associate this PDF "
-                           "with it.".format(doi, refno))
+            for refno, article in enumerate(_g.articleList, start=1):
+                if doi == article.doi:
+                    _error(f"import: DOI {doi} already in database. Use "
+                           f"'ap {refno}' to associate this PDF with it."
                     no += 1
                     break
             else:  # ok, I don't like for-else, but it just works here...
                 # Prompt user whether they want to add it
-                addyes, addno = await addRef([doi])
+                addyes, addno = await cli_add([doi])
                 yes += addyes
                 no += addno
                 if addyes == 1:
                     # Save the pdf into the database.
-                    await refMgmt.savePDF(path, doi, "pdf")
+                    await refMgmt.savePDF(file, doi, "pdf")
     # Trigger autosave
     _g.changes += ["import"] * yes
     return yes, no
@@ -1019,26 +1029,22 @@ class ArgumentError(Exception):
     pass
 
 
-def parse_directory(args):
+def parse_paths(args):
     """
-    Takes a list of command-line arguments and returns a directory from the
-    first argument.
+    Takes a list of command-line arguments and returns a list of Path objects,
+    one from each argument.
+    """
+    try:
+        paths = [Path(arg) for arg in args]
+    except TypeError:  # not castable
+        raise ArgumentError(f"invalid argument{_p(args)} {args}")
 
-    Used by cli_read() and cli_write().
-    """
-    # Check if it's empty...
-    if args == []:
-        raise ArgumentError("no filename specified")
-    # If not, then make a directory from args[0]
-    else:
-        try:
-            p = Path(args[0])
-            if not p.is_absolute():
-                p = _g.currentPath / p
-            p = p.resolve().expanduser()
-            return p
-        except TypeError:  # not castable
-            raise ArgumentError(f"invalid argument{_p(args)} {args}")
+    # Resolve relative to _g.currentPath
+    for path in paths:
+        if not path.is_absolute():
+            path = _g.currentPath / path
+        path = path.resolve().expanduser()
+    return paths
 
 
 def parse_refnos(args):
