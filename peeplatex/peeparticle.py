@@ -185,7 +185,7 @@ class Article():
         Raises:
             ValueError if the type parameter is not one of the above.
         """
-        acs_authors = ";".join(self.format_authors("acs"))
+        acs_authors = "; ".join(self.format_authors("acs"))
         pages_with_endash = self.pages.replace("-", "\u2013")
         # Just DOI
         if type in ["doi", "d"]:

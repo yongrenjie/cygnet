@@ -11,7 +11,6 @@ from copy import deepcopy
 from itertools import zip_longest
 
 from ._shared import *
-from . import peepdoi
 
 _formatstr = "{0:<{1}}{2:{3}}{4:<{5}}{6:{7}}{8:{9}}"
 

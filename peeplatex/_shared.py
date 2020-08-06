@@ -10,6 +10,7 @@ as some useful constants.
 It also contains trivial functions that are used repeatedly throughout the code.
 """
 
+import os
 import sys
 import subprocess
 import asyncio
@@ -67,6 +68,9 @@ class _g():
                            check=True)
         except subprocess.CalledProcessError:
             darkmode = False
+    # Check for JupyterLab terminal
+    if "JUPYTER_SERVER_ROOT" in os.environ:
+        darkmode = False
     # Colours for various stuff. Names should be self-explanatory.
     a = lambda col: f"\033[38;5;{col}m"
     ptPurple  = "#e4b3ff" if darkmode else "#940172"
