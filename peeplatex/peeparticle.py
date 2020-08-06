@@ -7,6 +7,7 @@ Also contains methods for generating an Article from a DOI using the Crossref AP
 """
 
 import asyncio
+import urllib
 from unicodedata import normalize
 from operator import attrgetter
 
@@ -187,6 +188,14 @@ class Article():
         """
         acs_authors = "; ".join(self.format_authors("acs"))
         pages_with_endash = self.pages.replace("-", "\u2013")
+        # Actually, not using quote() generally gives results that work fine.
+        # The only issue is that when using Markdown URLs with parentheses in
+        # Jupyter notebooks, the conversion to HTML gets it wrong, thinking
+        # that the URL ends at the first close parentheses in the URL. (In
+        # the notebook itself, it is fine, only the conversion to HTML messes
+        # up.) So we might as well escape them generally.
+        doi_url = f"https://doi.org/{urllib.parse.quote(self.doi)}"
+
         # Just DOI
         if type in ["doi", "d"]:
             return self.doi
@@ -197,12 +206,12 @@ class Article():
                 return (f"*{self.journal_short}* **{self.year}**, "
                         f"*{self.volume}* ({self.issue}), "
                         f"{pages_with_endash}. "
-                        f"[DOI: {self.doi}](https://doi.org/{self.doi}).")
+                        f"[DOI: {self.doi}]({doi_url}).")
             else:
                 return (f"*{self.journal_short}* **{self.year}**, "
                         f"*{self.volume},* "
                         f"{pages_with_endash}. "
-                        f"[DOI: {self.doi}](https://doi.org/{self.doi}).")
+                        f"[DOI: {self.doi}]({doi_url}).")
 
         # Markdown long
         elif type in ["Markdown", "M"]:
@@ -211,13 +220,13 @@ class Article():
                         f"*{self.journal_short}* **{self.year}**, "
                         f"*{self.volume}* ({self.issue}), "
                         f"{pages_with_endash}. "
-                        f"[DOI: {self.doi}](https://doi.org/{self.doi}).")
+                        f"[DOI: {self.doi}]({doi_url}).")
             else:
                 return (f"{acs_authors} {self.title}. "
                         f"*{self.journal_short}* **{self.year}**, "
                         f"*{self.volume},* "
                         f"{pages_with_endash}. "
-                        f"[DOI: {self.doi}](https://doi.org/{self.doi}).")
+                        f"[DOI: {self.doi}]({doi_url}).")
 
         # Word
         elif type in ["word", "w"]:
