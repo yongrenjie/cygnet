@@ -124,7 +124,7 @@ class Article():
         and returns the string "vol (issue), page-page", or "vol, page-page" if
         no issue number is present.
         """
-        if self.issue is not None:
+        if self.issue:
             return "{} ({}), {}".format(self.volume,
                                         self.issue,
                                         self.pages)
@@ -202,7 +202,7 @@ class Article():
 
         # Markdown short
         elif type in ["markdown", "m"]:
-            if self.issue is not None:
+            if self.issue:
                 return (f"*{self.journal_short}* **{self.year}**, "
                         f"*{self.volume}* ({self.issue}), "
                         f"{pages_with_endash}. "
@@ -215,7 +215,7 @@ class Article():
 
         # Markdown long
         elif type in ["Markdown", "M"]:
-            if self.issue is not None:
+            if self.issue:
                 return (f"{acs_authors} {self.title}. "
                         f"*{self.journal_short}* **{self.year}**, "
                         f"*{self.volume}* ({self.issue}), "
@@ -230,7 +230,7 @@ class Article():
 
         # Word
         elif type in ["word", "w"]:
-            if self.issue is not None:
+            if self.issue:
                 return (f"{acs_authors}"
                         f"{self.journal_short} {self.year}, "
                         f"{self.volume} ({self.issue}), "
