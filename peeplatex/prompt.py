@@ -174,7 +174,7 @@ class peepPrompt():
                                  "impor", "import"]:
                         if help is False:
                             _saveHist(cmd, args)
-                        await commands.importPDF(args, help=help)
+                        await commands.cli_import(args, help=help)
                     elif cmd in ["ap", "addp", "addpd", "addpdf"]:   # ADDPDF
                         await commands.addPDF(args, help=help)
                     elif cmd in ["dp", "delp", "delpd", "delpdf",    # DELETEPDF

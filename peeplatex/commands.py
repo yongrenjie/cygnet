@@ -20,7 +20,7 @@ import prompt_toolkit as pt
 
 from . import fileio
 from . import listprint
-from . import peeparticle
+from .peepcls import Article, DOI
 from . import refMgmt
 from . import backup
 from . import peepspin
@@ -73,7 +73,7 @@ def cli_cd(args):
         fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
 
     # Change the path
-    _g.previousPath, _g.currentPath = _g.currentPath, p
+    _g.previousPath, _g.currentPath = _g.currentPath, p.resolve()
 
     # Try to read in the yaml file, if it exists
     try:
@@ -422,7 +422,7 @@ async def cli_add(args):
                 break
         if found:
             _error(f"add: DOI '{doi}' already in library.\n"
-                   f"        Use 'u[pdate] {refno}' to refresh metadata.")
+                   f"            Use 'u[pdate] {refno}' to refresh metadata.")
             no += 1
         else:
             dois.append(doi)
@@ -430,7 +430,7 @@ async def cli_add(args):
         return
 
     articles = []
-    coroutines = [peeparticle.doi_to_article_cr(doi, _g.ahSession)
+    coroutines = [DOI(doi).to_article_cr(_g.ahSession)
                   for doi in dois]
     async with peepspin.Spinner(message="Fetching metadata...",
                                 total=len(dois)) as spinner:
@@ -448,9 +448,11 @@ async def cli_add(args):
             article.time_added = datetime.now(timezone.utc)
             article.time_opened = datetime.now(timezone.utc)
             # Prompt user whether to accept the article
-            peeparticle.diff_articles(peeparticle.Article(), article)
+            empty_article = Article()
+            empty_article.diff(article)
             msg = "add: accept new data (y/n)? ".format()
-            style = pt.styles.Style.from_dict({"prompt": _g.ptBlue, "": _g.ptGreen})
+            style = pt.styles.Style.from_dict({"prompt": _g.ptBlue, "":
+                                               _g.ptGreen})
             try:
                 ans = await pt.PromptSession().prompt_async(msg, style=style)
             except (EOFError, KeyboardInterrupt):
@@ -563,8 +565,7 @@ async def cli_update(args):
     old_articles = [_g.articleList[r - 1] for r in refnos]
     old_articles, refnos = zip(*sorted(zip(old_articles, refnos),
                                        key=(lambda t: t[0].doi)))
-    crts = [peeparticle.doi_to_article_cr(article.doi, _g.ahSession)
-            for article in old_articles]
+    crts = [article.to_newarticle_cr(_g.ahSession) for article in old_articles]
     new_articles = []
     # Perform asynchronous HTTP requests
     async with peepspin.Spinner(message="Fetching metadata...",
@@ -594,7 +595,7 @@ async def cli_update(args):
         new_article.time_added = old_article.time_added
         new_article.time_opened = old_article.time_opened
         # calculate and report differences
-        ndiffs = peeparticle.diff_articles(old_article, new_article)
+        ndiffs = old_article.diff(new_article)
         if ndiffs == 0:
             print(f"update: ref {refno}: no new data found")
         else:
@@ -672,8 +673,6 @@ async def cli_delete(args):
     return _ret.SUCCESS
 
 
-# TODO halfway refactoring cli_import.
-
 @_helpdeco
 async def cli_import(args=None):
     """
@@ -692,23 +691,13 @@ async def cli_import(args=None):
 
     If this fails, add the DOI manually (with 'a <doi>'), then add the
     PDF with 'ap <refno>'.
-
-    ** Function details **
-    This is only meant to be invoked from the command-line.
-
-    Arguments:
-        args: List of command-line options.
-
-    Returns:
-        Tuple (yes, no) containing number of PDFs successfully added and
-        number of PDFs that were not added.
     """
     # Argument processing
     if args == []:
         return _error("import: no path(s) provided")
 
     # Get paths from the args.
-    paths = parse_path(args)
+    paths = parse_paths(args)
     # Find directories and get files from them
     dirs = [p for p in paths if p.is_dir()]
     files = [p for p in paths if p.is_file()]
@@ -718,8 +707,8 @@ async def cli_import(args=None):
     yes, no = 0, 0
     # Process every PDF file found.
     for file in files:
-        # Try to get the DOI
-        doi = refMgmt.PDFToDOI(file)
+        # Try to get the DOI (as a string, hence the .doi at the end)
+        doi = DOI.from_pdf(file).doi
         if doi == _ret.FAILURE:
             no += 1
         else:
@@ -727,8 +716,8 @@ async def cli_import(args=None):
             # Check whether it's already in the database
             for refno, article in enumerate(_g.articleList, start=1):
                 if doi == article.doi:
-                    _error(f"import: DOI {doi} already in database. Use "
-                           f"'ap {refno}' to associate this PDF with it.")
+                    _error(f"import: DOI {doi} already in database. Use 'ap "
+                           f"{refno}' to associate this PDF with it.")
                     no += 1
                     break
             else:
@@ -739,47 +728,54 @@ async def cli_import(args=None):
                 no += addno
                 if addyes == 1:
                     # Save the pdf into the database.
-                    await refMgmt.savePDF(file, doi, "pdf")
+                    psrc = file
+                    pdest = DOI(doi).to_article(metadata=False).to_fname("pdf")
+                    # mkdir -p the folder if it doesn't already exist.
+                    if not pdest.parent.exists():
+                        pdest.parent.mkdir(parents=True)
+                    subprocess.run(["cp", str(psrc), str(pdest)], check=True)
     # Trigger autosave
     _g.changes += ["import"] * yes
     return yes, no
 
 
-@_helpdeco
-async def addPDF(args):
-    """
-    Usage: addpdf (or ap) refno[...]
+# TODO Continue refactoring this. I did the docstring and argument parsing
+# already but nothing else. Only three more functions to go...!
 
+@_helpdeco
+async def cli_addpdf(args):
+    """
+    *** addpdf ***
+
+    Usage
+    -----
+    addpdf refno[...]
+    ap refno[...]
+
+    Description
+    -----------
     Add a PDF to an existing reference in the database. Arguments can be
-    provided as refnos. See 'h list' for more details on the syntax. This
-    function will then prompt you for a link to the file; this can be provided
-    as either a URL or an (absolute) file system path. File paths can be most
-    easily provided by dragging-and-dropping a file into the terminal window.
+    provided as refnos; see 'h list' for more details on the syntax.
+
+    This function will then prompt you for a link to the file; this can be
+    provided as either a URL or an (absolute) file system path. File paths can
+    be most easily provided by dragging-and-dropping a file into the terminal
+    window.
 
     Note that PDFs that have already been saved cannot be changed using this
-    command. You have to delete the PDF first (using 'dp'), then re-add the
-    new PDF.
-
-    ** Function details **
-    This is meant to be only invoked from the command-line.
-
-    Arguments:
-        args: List of command-line arguments.
-
-    Returns: TBD.
+    command. You have to delete the PDF first (using 'dp'), then re-add the new
+    PDF.
     """
     if _g.articleList == []:
-        return _error("addPDF: no articles have been loaded")
-    if args == []:
-        return _error("addPDF: no references selected")
+        return _error("addpdf: no articles have been loaded")
 
     # no formats to process; just refnos
-    refnos = refMgmt.parseRefno(",".join(args))
-    # Check the returned values
-    ls = len(_g.articleList)
-    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
-        return _error("addPDF: invalid argument{} '{}' given".format(_p(args),
-                                                                     " ".join(args)))
+    try:
+        refnos = parse_refnos(args)
+    except ArgumentError as e:
+        return _error(f"addpdf: {str(e)}")
+    if len(refnos) == 0:
+        return _error("addpdf: no references selected")
 
     formats = ["pdf", "si"]
     yes, no = 0, 0
@@ -810,8 +806,8 @@ async def addPDF(args):
                     avail[f] = False
 
             style = pt.styles.Style.from_dict({"prompt": _g.ptBlue, "": _g.ptGreen})
-            msg = {"pdf": "addPDF: provide path to PDF (leave empty to skip): ",
-                   "si": "addPDF: provide path to SI (leave empty to skip): "}
+            msg = {"pdf": "addpdf: provide path to PDF (leave empty to skip): ",
+                   "si": "addpdf: provide path to SI (leave empty to skip): "}
             # If both are available
             if avail["pdf"] and avail["si"]:
                 print("Both PDF and SI found.")
@@ -834,7 +830,7 @@ async def addPDF(args):
     except KeyboardInterrupt:
         pass
 
-    print("addPDF: {} PDFs added, {} failed".format(yes, no))
+    print("addpdf: {} PDFs added, {} failed".format(yes, no))
     return _ret.SUCCESS
 
 
@@ -1041,10 +1037,12 @@ def parse_paths(args):
         raise ArgumentError(f"invalid argument{_p(args)} {args}")
 
     # Resolve relative to _g.currentPath
-    for path in paths:
+    for i, path in enumerate(paths):
         if not path.is_absolute():
             path = _g.currentPath / path
-        path = path.resolve().expanduser()
+        # We need to actually replace paths[i], or else (I think) it creates a
+        # new object that isn't in the list.
+        paths[i] = path.resolve().expanduser()
     return paths
 
 

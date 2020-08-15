@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from .peeparticle import Article
+from .peepcls import Article
 
 
 def read_articles(fname):
