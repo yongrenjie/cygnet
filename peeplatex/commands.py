@@ -20,10 +20,9 @@ import prompt_toolkit as pt
 
 from . import fileio
 from . import listprint
-from .peepcls import Article, DOI
+from .peepcls import Article, DOI, Spinner
 from . import refMgmt
 from . import backup
-from . import peepspin
 from ._shared import *
 
 
@@ -432,8 +431,8 @@ async def cli_add(args):
     articles = []
     coroutines = [DOI(doi).to_article_cr(_g.ahSession)
                   for doi in dois]
-    async with peepspin.Spinner(message="Fetching metadata...",
-                                total=len(dois)) as spinner:
+    async with Spinner(message="Fetching metadata...",
+                       total=len(dois)) as spinner:
         for crt in asyncio.as_completed(coroutines):
             articles.append(await crt)
             spinner.increment(1)
@@ -568,8 +567,8 @@ async def cli_update(args):
     crts = [article.to_newarticle_cr(_g.ahSession) for article in old_articles]
     new_articles = []
     # Perform asynchronous HTTP requests
-    async with peepspin.Spinner(message="Fetching metadata...",
-                                total=len(refnos)) as spinner:
+    async with Spinner(message="Fetching metadata...",
+                       total=len(refnos)) as spinner:
         for crt in asyncio.as_completed(crts):
             new_articles.append(await crt)
             spinner.increment(1)
@@ -739,9 +738,6 @@ async def cli_import(args=None):
     return yes, no
 
 
-# TODO Continue refactoring this. I did the docstring and argument parsing
-# already but nothing else. Only three more functions to go...!
-
 @_helpdeco
 async def cli_addpdf(args):
     """
@@ -777,62 +773,61 @@ async def cli_addpdf(args):
     if len(refnos) == 0:
         return _error("addpdf: no references selected")
 
-    formats = ["pdf", "si"]
     yes, no = 0, 0
     # We wrap the whole thing in try/except to catch Ctrl-C, which will get us
     # out of the entire loop quickly. Sending Ctrl-D just moves us to the next
     # refno.
     try:
         for i, r in enumerate(refnos):
-            # Print the title.
-            doi = _g.articleList[r - 1]["doi"]
-            title = _g.articleList[r - 1]["title"]
-            year = _g.articleList[r - 1]["year"]
-            author = _g.articleList[r - 1]["authors"][0]["family"]
+            article = _g.articleList[r - 1]
+            # Print a line break between successive references
             if i != 0:
                 print()  # Just a bit easier to read.
-            print("{}({}) {} {}:{} {}".format(_g.ansiBold, r, author, year,
-                                               _g.ansiReset, title))
+            # Print the header to tell the user which article they're adding
+            # to, as well as whether the PDFs are already available.
+            print(f"{_g.ansiBold}({r}) {article.authors[0]['family']} "
+                  f"{article.year}:{_g.ansiReset} {article.title}")
+            availability = article.get_availability()
+            print(article.get_availability_string())
 
-            # Check whether the PDFs are already available.
-            avail = {}  # mapping of format -> Bool
-            for f in formats:
-                p = _g.currentPath.parent / f / (doi.replace('/','#') + ".pdf")
-                if p.exists() and p.is_file():
-                    print(" {}\u2714{} {}   ".format(_g.ansiDiffGreen, _g.ansiReset, f))
-                    avail[f] = True
-                else:
-                    print(" {}\u2718{} {}   ".format(_g.ansiDiffRed, _g.ansiReset, f))
-                    avail[f] = False
-
-            style = pt.styles.Style.from_dict({"prompt": _g.ptBlue, "": _g.ptGreen})
-            msg = {"pdf": "addpdf: provide path to PDF (leave empty to skip): ",
-                   "si": "addpdf: provide path to SI (leave empty to skip): "}
             # If both are available
-            if avail["pdf"] and avail["si"]:
+            if availability[0] and availability[1]:
                 print("Both PDF and SI found.")
                 continue
             # At least one isn't available
             else:
-                for f in (fmt for fmt in avail.keys() if not avail[fmt]):
+                style = pt.styles.Style.from_dict({"prompt": _g.ptBlue,
+                                                   "": _g.ptGreen})
+                msg = {"pdf": "addpdf: provide path to PDF (leave empty to skip): ",
+                       "si": "addpdf: provide path to SI (leave empty to skip): "}
+                # Iterate over both and skip anything that's available
+                for fmt, avail in zip(["pdf", "si"], availability):
+                    if avail:
+                        continue
+                    # If we reach here, then it's not available.
                     try:
-                        ans = await pt.PromptSession().prompt_async(msg[f],
-                                                                    style=style)
+                        ans = await pt.PromptSession().prompt_async(
+                            (f"addpdf: provide path to {fmt.upper()} (leave "
+                             f"empty to skip): "),
+                            style=style)
                     except EOFError:  # move on to next question...
                         continue
                     if ans.strip():
-                        saveTask = asyncio.create_task(refMgmt.savePDF(ans, doi, f))
-                        await asyncio.wait([saveTask])
-                        if saveTask.result() == _ret.FAILURE:
-                            no += 1
-                        else:
+                        save_task = asyncio.create_task(
+                            article.register_pdf(ans, fmt, _g.ahSession))
+                        [done_task, ], _ = await asyncio.wait([save_task])
+                        if done_task.result() == _ret.SUCCESS:
                             yes += 1
+                        else:
+                            no += 1
     except KeyboardInterrupt:
         pass
 
     print("addpdf: {} PDFs added, {} failed".format(yes, no))
     return _ret.SUCCESS
 
+
+# TODO continue refactoring from here onwards
 
 @_helpdeco
 async def deletePDF(args, silent=False):

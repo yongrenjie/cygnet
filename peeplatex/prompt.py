@@ -176,7 +176,7 @@ class peepPrompt():
                             _saveHist(cmd, args)
                         await commands.cli_import(args, help=help)
                     elif cmd in ["ap", "addp", "addpd", "addpdf"]:   # ADDPDF
-                        await commands.addPDF(args, help=help)
+                        await commands.cli_addpdf(args, help=help)
                     elif cmd in ["dp", "delp", "delpd", "delpdf",    # DELETEPDF
                                  "deletep", "deletepd", "deletepdf"]:
                         await commands.deletePDF(args, help=help)

@@ -2,17 +2,18 @@
 peepcls.py
 ----------
 
-Contains the Article class and methods on it.
-Also contains methods for generating an Article from a DOI using the Crossref API.
+Contains the Article, DOI, and Spinner classes.
 """
 
 import re
+import sys
 import subprocess
 import asyncio
 import urllib
 from pathlib import Path
 from unicodedata import normalize
 from operator import attrgetter
+from itertools import cycle
 
 import aiohttp
 from unidecode import unidecode
@@ -136,6 +137,16 @@ class Article():
         else:
             return f"{self.volume}, {self.pages}"
 
+    def get_availability(self):
+        """
+        Checks whether the PDF and SI are available for a given article.
+
+        Returns
+        -------
+        List of (bool, bool) corresponding to PDF and SI availability.
+        """
+        return [self.to_fname(type).is_file() for type in ("pdf", "si")]
+
     def get_availability_string(self):
         """
         Generates a string reflecting the presence or absence of a PDF or SI
@@ -145,7 +156,7 @@ class Article():
         -------
         A string with a green tick / red cross for 'pdf' and 'si' formats.
         """
-        exists = [self.to_fname(type).is_file() for type in ("pdf", "si")]
+        exists = self.get_availability()
         symbols = ['\u2714' if e else '\u2718' for e in exists]
         colors = [_g.ansiDiffGreen if e else _g.ansiDiffRed for e in exists]
         return (f"{colors[0]}{symbols[0]}{_g.ansiReset}pdf  "
@@ -351,6 +362,115 @@ class Article():
         Asynchronous version of fetch_metadata().
         """
         return await DOI(self.doi).to_article_cr(client_session=client_session)
+
+    async def register_pdf(self, path, type, client_session=None):
+        """
+        Copies a PDF for an article into the database ('registering' it).
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Link to the file, or to a webpage.
+        type : str from {"pdf", "si"}
+            Indicates whether it's a PDF or SI.
+        """
+        # Figure out whether it's a file on disk, or a web page. This is crude,
+        # but should work as long as we only use absolute paths.
+        src_type = "file" if str(path).startswith('/') else "url"
+
+        # Construct the destination path (where the PDF should be saved to).
+        pdest = self.to_fname(type)
+        # mkdir -p the folder if it doesn't already exist.
+        if not pdest.parent.exists():
+            pdest.parent.mkdir(parents=True)
+
+        # Copy a file over. We just use cp(1)
+        if src_type == "file":
+            # Process and check source path. Note that dragging-and-dropping
+            # into the terminal gives us escaped spaces, hence the replace().
+            psrc = str(path).replace("\\ "," ").strip()
+            for escapedChar, char in _g.pathEscapes:
+                psrc = psrc.replace(escapedChar, char)
+            psrc = Path(psrc)
+            # If the file doesn't exist, raise a more descriptive error than
+            # cp's default
+            if not psrc.is_file():
+                return _error("The specified PDF was not found.")
+            # Otherwise any errors in cp will be raised as CalledProcessError.
+            else:
+                subprocess.run(["cp", str(psrc), str(pdest)], check=True)
+
+        # Downloading a file...
+        if src_type == "url":
+            # Instantiate a new ClientSession if none was provided. However, we
+            # do need to remember whether the ClientSession was provided: if it
+            # wasn't, then we should close it at the end.
+            if client_session is None:
+                # Make sure we have a polite header, though.
+                session = aiohttp.ClientSession(headers=_g.httpHeaders)
+            else:
+                session = client_session
+
+            psrc = str(path).strip()
+            try:
+                async with client_session.get(psrc) as resp:
+                    # Check if Elsevier is trying to redirect us.
+                    if ("sciencedirect" in psrc
+                            and resp.content_type == "text/html"):
+                        # Construct a regex which detects where it's
+                        # redirecting us to, then scan the website text for the
+                        # redirect URL.
+                        redirectRegex = re.compile(
+                            r"""window.location\s*=\s*'(https?://.+)';"""
+                        )
+                        text = await resp.text()
+                        for line in text.split("\n"):
+                            match = redirectRegex.search(line)
+                            if match:
+                                newurl = match.group(1)
+                                _debug("Redirected by Elsevier")
+                                # We just need to recursively call ourself with
+                                # the new URL.
+                                new_save = asyncio.create_task(
+                                    self.register_pdf(newurl, type))
+                                await asyncio.wait([new_save])
+                                return new_save.result()
+                    # Otherwise, check if we are actually getting a PDF
+                    if "application/pdf" not in resp.content_type:
+                        return _error(f"The URL '{psrc}' was not a PDF file.")
+
+                    # OK, so by now we are pretty sure we have a working link
+                    # to a PDF. Try to get the file size.
+                    filesize = None
+                    try:
+                        filesize = int(resp.headers["content-length"])
+                    except (KeyError, ValueError):
+                        pass
+                    # Create spinner.
+                    total = filesize/(2 ** 20) if filesize else 0
+                    async with Spinner("Downloading file...", total=total,
+                                       units="MB", fstr="{:.2f}") as spinner:
+                        # Stream the content directly into pdest
+                        with open(pdest, "wb") as fp:
+                            chunk_size = 2048   # bytes
+                            while True:  # good argument for := here
+                                chunk = await resp.content.read(chunk_size)
+                                if not chunk:
+                                    break
+                                fp.write(chunk)
+                                if filesize is not None:
+                                    spinner.increment(chunk_size/(2**20))
+            except aiohttp.client_exceptions.InvalidURL:
+                return _error(f"Invalid URL {psrc} provided.")
+            except aiohttp.ClientResponseError as e:
+                return _error(f"HTTP status {e.status}: {e.message}")
+
+            # Close off the ClientSession instance if it was only created for
+            # this.
+            if client_session is None:
+                await session.close()
+
+        return _ret.SUCCESS
 
 
 class DOI():
@@ -697,3 +817,75 @@ class DOI():
             return DOI(doi)
         else:
             return _error(f"from_pdf: could not find DOI from '{p}'")
+
+
+class Spinner():
+    """
+    Asynchronous context manager that can start and stop a spinner.
+
+    async with Spinner(message, total, ...) as spinner:
+        # code goes here
+        spinner.increment()   # if needed
+    """
+
+    def __init__(self, message, total, units="", fstr="{}"):
+        """
+        message (str) - the message to display to the user while it's running
+        total (float) - the number of tasks to run, or the number that it
+                        should show when completed
+        units (str)   - the units by which progress is measured
+        fstr (str)    - a format string which 'done' and 'total' should be
+                        formatted into. That is to say, the spinner's message
+                        includes fstr.format(done) and fstr.format(total).
+                        Defaults to '{}', i.e. default formatting.
+        """
+        self.message = message
+        self.total = total
+        self.units = units
+        self.fstr = fstr
+        self.done = 0      # running counter of tasks done
+        self.time = 0      # time taken to run the tasks
+
+    async def __aenter__(self):
+        self.task = asyncio.create_task(self.run())
+        return self
+
+    async def run(self):
+        write = sys.stdout.write
+        flush = sys.stdout.flush
+        try:
+            for c in cycle("|/-\\"):
+                full_message = (f"{c} {self.message} "
+                                f"({self.fstr.format(self.done)}/"
+                                f"{self.fstr.format(self.total)}"
+                                f"{self.units})")
+                write(full_message)
+                flush()
+                await asyncio.sleep(0.1)
+                self.time += 0.1
+                write('\x08' * len(full_message))
+                flush()
+        except asyncio.CancelledError:
+            write('\x08' * len(full_message))
+            flush()
+            full_message = (f"- {self.message} "
+                            f"({self.fstr.format(self.total)}/"
+                            f"{self.fstr.format(self.total)}"
+                            f"{self.units})")
+            write(full_message)
+            print()
+
+    def increment(self, inc):
+        """
+        Increments the spinner's progress counter.
+        """
+        self.done += inc
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        self.task.cancel()
+        # We make sure that self.task is really cancelled before exiting, or
+        # else it can mess up subsequent output quite badly.
+        try:
+            await self.task
+        except asyncio.CancelledError:  # ok, it's really done
+            pass

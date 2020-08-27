@@ -84,7 +84,8 @@ async def main_coro():
 
     # Launch aiohttp session with nice user-agent default header.
     async with aiohttp.ClientSession(connector=_g.ahConnector,
-                                     headers=_g.httpHeaders) as ahSession:
+                                     headers=_g.httpHeaders,
+                                     raise_for_status=True) as ahSession:
         # ahSession only exists in this context manager block, so to avoid
         # having to pass it 1 million times through subroutines, we bind it
         # to a global variable first
