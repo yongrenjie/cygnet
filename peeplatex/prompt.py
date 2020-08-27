@@ -179,10 +179,10 @@ class peepPrompt():
                         await commands.cli_addpdf(args, help=help)
                     elif cmd in ["dp", "delp", "delpd", "delpdf",    # DELETEPDF
                                  "deletep", "deletepd", "deletepdf"]:
-                        await commands.deletePDF(args, help=help)
+                        await commands.cli_deletepdf(args, help=help)
                     elif cmd in ["f", "fe", "fet", "fetc",           # FETCH
                                  "fetch"]:
-                        await commands.fetchPDF(args, help=help)
+                        await commands.cli_fetch(args, help=help)
                     elif cmd in ["un", "und", "undo"]:               # UNDO
                         _undo(help=help)
                     elif cmd in ["exec"] and _g.debug:               # EXEC

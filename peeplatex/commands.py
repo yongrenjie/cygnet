@@ -8,6 +8,7 @@ line usage!
 """
 
 import subprocess
+import shutil
 import asyncio
 from pathlib import Path
 from copy import deepcopy
@@ -660,8 +661,7 @@ async def cli_delete(args):
             # Delete the PDFs first
             pdf_paths = [article.to_fname(type) for type in ("pdf", "si")]
             for pdf in pdf_paths:
-                if pdf.is_file():
-                    pdf.unlink()
+                pdf.unlink(missing_ok=True)
             # Then delete the article
             del _g.articleList[refno - 1]
             yes += 1
@@ -732,7 +732,7 @@ async def cli_import(args=None):
                     # mkdir -p the folder if it doesn't already exist.
                     if not pdest.parent.exists():
                         pdest.parent.mkdir(parents=True)
-                    subprocess.run(["cp", str(psrc), str(pdest)], check=True)
+                    shutil.copy2(psrc, pdest)
     # Trigger autosave
     _g.changes += ["import"] * yes
     return yes, no
@@ -745,13 +745,15 @@ async def cli_addpdf(args):
 
     Usage
     -----
-    addpdf refno[...]
-    ap refno[...]
+    addpdf refno[...] [formats]
+    ap refno[...] [formats]
 
     Description
     -----------
     Add a PDF to an existing reference in the database. Arguments can be
-    provided as refnos; see 'h list' for more details on the syntax.
+    provided as refnos; see 'h list' for more details on the syntax. The
+    available formats are "pdf" (or "p"), and "si" (or "s"). If no formats are
+    provided then defaults to both.
 
     This function will then prompt you for a link to the file; this can be
     provided as either a URL or an (absolute) file system path. File paths can
@@ -762,16 +764,24 @@ async def cli_addpdf(args):
     command. You have to delete the PDF first (using 'dp'), then re-add the new
     PDF.
     """
-    if _g.articleList == []:
+    if _g.articlelist == []:
         return _error("addpdf: no articles have been loaded")
 
-    # no formats to process; just refnos
+    abbrevs = {"pdf": "p", "si": "s"}
     try:
-        refnos = parse_refnos(args)
-    except ArgumentError as e:
+        refnos, formats = parse_refnos_formats(args, abbrevs=abbrevs)
+    except argumenterror as e:
         return _error(f"addpdf: {str(e)}")
     if len(refnos) == 0:
         return _error("addpdf: no references selected")
+    # apply default formats
+    if len(formats) == 0:
+        formats = ["p"]
+    # expand to long form as we will need it later
+    long_formats = []
+    for k, v in abbrevs.items():
+        if v in formats:
+            long_formats.append(k)
 
     yes, no = 0, 0
     # We wrap the whole thing in try/except to catch Ctrl-C, which will get us
@@ -786,40 +796,36 @@ async def cli_addpdf(args):
             # Print the header to tell the user which article they're adding
             # to, as well as whether the PDFs are already available.
             print(f"{_g.ansiBold}({r}) {article.authors[0]['family']} "
-                  f"{article.year}:{_g.ansiReset} {article.title}")
+                  f"{article.year}:{_g.ansiReset} {article.title}", end="   ")
             availability = article.get_availability()
             print(article.get_availability_string())
 
-            # If both are available
-            if availability[0] and availability[1]:
-                print("Both PDF and SI found.")
-                continue
-            # At least one isn't available
-            else:
-                style = pt.styles.Style.from_dict({"prompt": _g.ptBlue,
-                                                   "": _g.ptGreen})
-                msg = {"pdf": "addpdf: provide path to PDF (leave empty to skip): ",
-                       "si": "addpdf: provide path to SI (leave empty to skip): "}
-                # Iterate over both and skip anything that's available
-                for fmt, avail in zip(["pdf", "si"], availability):
-                    if avail:
-                        continue
-                    # If we reach here, then it's not available.
-                    try:
-                        ans = await pt.PromptSession().prompt_async(
-                            (f"addpdf: provide path to {fmt.upper()} (leave "
-                             f"empty to skip): "),
-                            style=style)
-                    except EOFError:  # move on to next question...
-                        continue
-                    if ans.strip():
-                        save_task = asyncio.create_task(
-                            article.register_pdf(ans, fmt, _g.ahSession))
-                        [done_task, ], _ = await asyncio.wait([save_task])
-                        if done_task.result() == _ret.SUCCESS:
-                            yes += 1
-                        else:
-                            no += 1
+            style = pt.styles.Style.from_dict({"prompt": _g.ptBlue,
+                                               "": _g.ptGreen})
+            for fmt, avail in zip(["pdf", "si"], availability):
+                # Check whether the format was requested
+                if fmt not in long_formats:
+                    continue
+                # Check whether it's already available
+                if avail:
+                    print(f"{fmt.upper()} is already available.")
+                    continue
+                # If we reach here, then it's not available.
+                try:
+                    ans = await pt.PromptSession().prompt_async(
+                        (f"addpdf: provide path to {fmt.upper()} (leave "
+                         f"empty to skip): "),
+                        style=style)
+                except EOFError:  # move on to next question...
+                    continue
+                if ans.strip():
+                    save_task = asyncio.create_task(
+                        article.register_pdf(ans, fmt, _g.ahSession))
+                    [done_task, ], _ = await asyncio.wait([save_task])
+                    if done_task.result() == _ret.SUCCESS:
+                        yes += 1
+                    else:
+                        no += 1
     except KeyboardInterrupt:
         pass
 
@@ -827,127 +833,68 @@ async def cli_addpdf(args):
     return _ret.SUCCESS
 
 
-# TODO continue refactoring from here onwards
-
 @_helpdeco
-async def deletePDF(args, silent=False):
+async def cli_deletepdf(args):
     """
-    Usage: deletepdf (or dp) refno[...]
+    *** deletepdf ***
 
-    Deletes PDF files associated with one or more references.
+    Usage
+    -----
+    deletepdf refno[...] [formats]
+    dp refno[...] [formats]
 
-    At least one refno must be specified. For more details about how to specify
-    refnos, type 'h list'.
+    Description
+    -----------
+    Delete a PDF from an existing reference in the database. The articles for
+    which PDFs should be deleted are specified as refnos; see 'h list' for more
+    details on the syntax.
 
-    ** Function details **
-    Deletes PDFs.
+    This does NOT prompt for confirmation!
 
-    Arguments:
-        args  : List of command-line arguments.
-        silent: If False, prompts the user for confirmation before deleting.
+    More than one format can be provided, separated by commas, spaces, or even
+    by nothing at all. Available formats are:
 
-    Returns:
-        Return values as described in _ret.
+        'pdf' or 'p' (default) - The full text of the article (as a PDF).
+        'si'  or 's'           - The SI of the article (as a PDF).
     """
     if _g.articleList == []:
-        return _error("deletePDF: no articles have been loaded")
-    if args == []:
-        return _error("deletePDF: no references selected")
+        return _error("deletepdf: no articles have been loaded")
 
-    # no formats to process; just refnos
-    refnos = refMgmt.parseRefno(",".join(args))
-    # Check the returned values
-    ls = len(_g.articleList)
-    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
-        return _error("deletePDF: invalid argument{} '{}' given".format(_p(args),
-                                                                        " ".join(args)))
+    abbrevs = {"pdf": "p", "si": "s"}
+    try:
+        refnos, formats = parse_refnos_formats(args, abbrevs=abbrevs)
+    except argumenterror as e:
+        return _error(f"deletepdf: {str(e)}")
+    if len(refnos) == 0:
+        return _error("deletepdf: no references selected")
+    # apply default formats
+    if len(formats) == 0:
+        formats = ["p"]
 
+    # Just delete it, no questions asked!
     yes = 0
     for i, r in enumerate(refnos):
-        # Print the title.
-        doi = _g.articleList[r - 1]["doi"]
-        title = _g.articleList[r - 1]["title"]
-        year = _g.articleList[r - 1]["year"]
-        author = _g.articleList[r - 1]["authors"][0]["family"]
-        if not silent:
-            if i != 0:
-                print()  # Just a bit easier to read.
-            print("{}({}) {} {}:{} {}".format(_g.ansiBold, r, author, year,
-                                               _g.ansiReset, title))
-        # Check whether the PDFs are actually available.
-        avail = {}  # mapping of format -> Bool
-        for f in ["pdf", "si"]:
-            p = _g.currentPath.parent / f / (doi.replace('/','#') + ".pdf")
-            if p.exists() and p.is_file():
-                avail[f] = True
-                if not silent:
-                    print(" {}\u2714{} {}   ".format(_g.ansiDiffGreen, _g.ansiReset, f))
-            else:
-                avail[f] = False
-                if not silent:
-                    print(" {}\u2718{} {}   ".format(_g.ansiDiffRed, _g.ansiReset, f))
-
-        # If both are not available
-        if not avail["pdf"] and not avail["si"]:
-            print("No PDFs associated with reference {} found.".format(r))
-            continue
-        # At least one available. Prompt user for format to delete
-        else:
-            if not silent:
-                style = pt.styles.Style.from_dict({"prompt": "{} bold".format(_g.ptBlue),
-                                                   "": _g.ptGreen})
-                msg = "deletePDF: Confirm deletion by typing formats to be deleted: "
-                try:
-                    ans = await pt.PromptSession().prompt_async(msg)
-                except (KeyboardInterrupt, EOFError):
-                    continue  # to the next refno
-                # Parse user input and delete files as necessary
-                else:
-                    ans = ans.replace("pdf", "p").replace("si", "s")
-                    fs = refMgmt.parseFormat(ans)
-                    if fs == _ret.FAILURE or any(f not in ['p', 's'] for f in fs) \
-                            or ('p' in fs and not avail["pdf"]) \
-                            or ('s' in fs and not avail["si"]):
-                        _error("deletePDF: invalid response, no PDFs deleted")
-                        continue  # to the next refno
-            else:
-                # Didn't want to be prompted. Just delete everything without
-                # any error checking.
-                fs = ['p', 's']
-
-            # If we reached here, that means we should delete files.
-            if 'p' in fs:
-                path = _g.currentPath.parent / "pdf" / \
-                    (doi.replace('/','#') + ".pdf")
-                try:
-                    subprocess.run(["rm", str(path)],
-                                   stderr=subprocess.DEVNULL,
-                                   check=True)
-                except subprocess.CalledProcessError:  # file not found
-                    pass
-                else:
-                    yes += 1
-            if 's' in fs:
-                path = _g.currentPath.parent / "si" / \
-                    (doi.replace('/','#') + ".pdf")
-                try:
-                    subprocess.run(["rm", str(path)],
-                                   stderr=subprocess.DEVNULL,
-                                   check=True)
-                except subprocess.CalledProcessError:  # file not found
-                    pass
-                else:
-                    yes += 1
-
-    print("deletePDF: {} PDFs deleted".format(yes))
+        article = _g.articleList[r - 1]
+        for f in formats:
+            fname = article.to_fname(f)
+            if fname.exists():
+                yes += 1
+                fname.unlink()
+    print(f"deletepdf: {yes} files deleted")
     return _ret.SUCCESS
 
 
 @_helpdeco
-async def fetchPDF(args):
+async def cli_fetch(args):
     """
-    Usage: f[etch] refno[...]
+    *** fetch ***
 
+    Usage
+    -----
+    f[etch] refno[...]
+
+    Description
+    -----------
     Attempts to find the URL, and download, the full text PDF for the specified
     refnos. For more information on how to specify refnos, type 'h list'.
 
@@ -960,57 +907,59 @@ async def fetchPDF(args):
     Note that in order to download the full-text PDF, institutional access must
     be enabled, e.g. via VPN. (Or, of course, the PDF must be open-access.)
     """
+    # Argument parsing
     if _g.articleList == []:
-        return _error("fetchPDF: no articles have been loaded")
+        return _error("fetch: no articles have been loaded")
     if args == []:
-        return _error("fetchPDF: no references selected")
+        return _error("fetch: no references selected")
 
-    # no formats to process; just refnos
-    refnos = refMgmt.parseRefno(",".join(args))
-    # Check the returned values
-    ls = len(_g.articleList)
-    if refnos is _ret.FAILURE or refnos == [] or any(r > ls for r in refnos):
-        return _error("fetchPDF: invalid argument{} '{}' given".format(_p(args),
-                                                                       " ".join(args)))
+    try:
+        refnos = parse_refnos(args)
+    except ArgumentError as e:
+        return _error(f"fetch: {str(e)}")
+    if len(refnos) == 0:
+        return _error("fetch: no references selected")
 
     # Check which ones need downloading
-    dois = []
-    for r in refnos:
-        doi = _g.articleList[r - 1]["doi"]
-        p = _g.currentPath.parent / "pdf" / (doi.replace('/','#') + ".pdf")
-        if not (p.exists() and p.is_file()):
-            dois.append(doi)
+    articles_to_fetch = []
+    for refno in refnos:
+        article = _g.articleList[refno - 1]
+        if not article.to_fname("pdf").exists():
+            articles_to_fetch.append(article)
         else:
-            print("fetchPDF: PDf for ref {} already in library".format(r))
+            print(f"fetch: PDF for ref {refno} already in library")
 
     yes, no = 0, 0
-    # Start the downloads!
-    if len(dois) > 0:
-        prog = _progress(len(dois))
-        spin = asyncio.create_task(_spinner("Obtaining URLs", prog))
-        results = []
+    if articles_to_fetch == []:
+        return _ret.SUCCESS
+    else:
+        # Construct DOI objects.
+        dois = [DOI(article.doi) for article in articles_to_fetch]
+        async with Spinner(message="Obtaining URLs...",
+                           total=len(dois)) as spinner:
+            tasks = [asyncio.create_task(
+                doi.to_full_pdf_url(client_session=_g.ahSession)
+            ) for doi in dois]
+            # We're just using as_completed() to update the spinner. We aren't
+            # actually retrieving the results from here, because they are not
+            # returned in order.
+            for coro in asyncio.as_completed(tasks):
+                await coro
+                spinner.increment(1)
+            # Now they should all be done, so we can retrieve the results.
+            urls = [task.result() for task in tasks]
 
-        # Each coroutine returns a 2-tuple; the first component is
-        # the doi, and the second is the URL if it didn't fail (or
-        # a _ret.FAILURE if it did).
-        coros = [refMgmt.DOIToFullPDFURL(doi, _g.ahSession) for doi in dois]
-        for coro in asyncio.as_completed(coros):
-            results.append(await coro)
-            prog.incr()
-        spin.cancel()
-        await asyncio.sleep(0)
-
-        for result in results:
-            if result[1] == _ret.FAILURE:
+        for article, url in zip(articles_to_fetch, urls):
+            if url == _ret.FAILURE:
                 no += 1
             else:
-                x = await refMgmt.savePDF(result[1], result[0], "pdf")
+                x = await article.register_pdf(url, "pdf", _g.ahSession)
                 if x == _ret.FAILURE:
                     no += 1
                 else:
                     yes += 1
 
-    print("fetchPDF: {} PDFs successfully fetched, {} failed".format(yes, no))
+    print("fetch: {} PDFs successfully fetched, {} failed".format(yes, no))
     return _ret.SUCCESS
 
 

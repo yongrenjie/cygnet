@@ -10,6 +10,7 @@ import sys
 import subprocess
 import asyncio
 import urllib
+import shutil
 from pathlib import Path
 from unicodedata import normalize
 from operator import attrgetter
@@ -384,7 +385,7 @@ class Article():
         if not pdest.parent.exists():
             pdest.parent.mkdir(parents=True)
 
-        # Copy a file over. We just use cp(1)
+        # Copy a file over.
         if src_type == "file":
             # Process and check source path. Note that dragging-and-dropping
             # into the terminal gives us escaped spaces, hence the replace().
@@ -392,13 +393,10 @@ class Article():
             for escapedChar, char in _g.pathEscapes:
                 psrc = psrc.replace(escapedChar, char)
             psrc = Path(psrc)
-            # If the file doesn't exist, raise a more descriptive error than
-            # cp's default
             if not psrc.is_file():
                 return _error("The specified PDF was not found.")
-            # Otherwise any errors in cp will be raised as CalledProcessError.
             else:
-                subprocess.run(["cp", str(psrc), str(pdest)], check=True)
+                shutil.copy2(psrc, pdest)
 
         # Downloading a file...
         if src_type == "url":
@@ -413,7 +411,7 @@ class Article():
 
             psrc = str(path).strip()
             try:
-                async with client_session.get(psrc) as resp:
+                async with session.get(psrc) as resp:
                     # Check if Elsevier is trying to redirect us.
                     if ("sciencedirect" in psrc
                             and resp.content_type == "text/html"):
@@ -448,7 +446,9 @@ class Article():
                         pass
                     # Create spinner.
                     total = filesize/(2 ** 20) if filesize else 0
-                    async with Spinner("Downloading file...", total=total,
+                    async with Spinner((f"Downloading PDF for "
+                                        f"'{self.title}'..."),
+                                       total=total,
                                        units="MB", fstr="{:.2f}") as spinner:
                         # Stream the content directly into pdest
                         with open(pdest, "wb") as fp:
@@ -694,11 +694,14 @@ class DOI():
             "rsc": "https://pubs.rsc.org/en/content/articlepdf/{}",
         }
 
+        # Create a new ClientSession if one wasn't provided
+        if client_session is None:
+            # Make sure we have a polite header, though.
+            session = aiohttp.ClientSession(headers=_g.httpHeaders)
+        else:
+            session = client_session
         try:
             async with session.get(doi_url) as resp:
-                if resp.status != 200:
-                    return _error(f"to_full_pdf_url: URL '{doi_url}' returned "
-                                  "{resp.status} ({resp.reason})")
                 # Shortcut for ACS, don't need to read content
                 if any("pubs.acs.org" in h
                        for h in resp.headers.getall("Set-Cookie", [])):
@@ -750,13 +753,18 @@ class DOI():
         except (aiohttp.client_exceptions.ContentTypeError,
                 aiohttp.client_exceptions.InvalidURL,
                 aiohttp.client_exceptions.ClientConnectorError):
-            return (doi, _error(f"to_full_pdf_url: URL '{url_doi}' not "
-                                "accessible. Do you have access to the full "
-                                "text?"))
+            result = _error(f"to_full_pdf_url: URL '{url_doi}' not accessible."
+                            f" Do you have access to the full text?")
         except _PublisherFound:
-            return (doi, publisherFmtStrings[publisher].format(identifier))
+            result = publisherFmtStrings[publisher].format(identifier)
         else:
-            return (doi, _error("to_full_pdf_url: could not find full text for doi {}".format(doi)))
+            result = _error(f"to_full_pdf_url: could not find full text for "
+                            f"doi {self.doi}")
+
+        # Close the ClientSession if it was newly opened
+        if client_session is None:
+            await session.close()
+        return result
 
     @staticmethod
     def from_pdf(path):
