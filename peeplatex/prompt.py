@@ -62,6 +62,7 @@ class peepPrompt():
         """
         Parses the command-line input.
         """
+        line = line.strip()
         # Remove anything after a comment
         if self.commentSymbol in line:
             line = line.split(self.commentSymbol)[0].rstrip()

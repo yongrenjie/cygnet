@@ -52,13 +52,13 @@ def main():
     if dir.is_dir():
         # Set current path
         _g.currentPath = dir
-        # Try to load the db.yaml file, if it exists
+        # Try to load the peep.yaml file, if it exists
         try:
-            _g.articleList = fileio.read_articles(dir / "db.yaml")
+            _g.articleList = fileio.read_articles(dir / "peep.yaml")
         except FileNotFoundError:
             pass
         except yaml.YAMLError:
-            _error(f"A db.yaml file was found in {dir}, "
+            _error(f"A peep.yaml file was found in {dir}, "
                    "but it contained invalid YAML.")
         else:
             backup.create_backup()

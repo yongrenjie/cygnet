@@ -706,13 +706,13 @@ class DOI():
                 if any("pubs.acs.org" in h
                        for h in resp.headers.getall("Set-Cookie", [])):
                     publisher = "acs"
-                    identifier = doi
+                    identifier = self.doi
                     raise _PublisherFound
                 # Shortcut for Nature, don't need to read content
                 elif any("www.nature.com" in h
                          for h in resp.headers.getall("X-Forwarded-Host", [])):
                     publisher = "nature"
-                    identifier = doi.split('/', maxsplit=1)[1]
+                    identifier = self.doi.split('/', maxsplit=1)[1]
                     raise _PublisherFound
                 # Shortcut for Science, don't need to read content.
                 # Note that this doesn't work for Sci Advances
@@ -725,13 +725,13 @@ class DOI():
                 elif any(".springer.com" in h
                          for h in resp.headers.getall("Set-Cookie", [])):
                     publisher = "springer"
-                    identifier = doi
+                    identifier = self.doi
                     raise _PublisherFound
                 # Shortcut for Taylor and Francis
                 elif any(".tandfonline.com" in h
                          for h in resp.headers.getall("Set-Cookie", [])):
                     publisher = "tandf"
-                    identifier = doi
+                    identifier = self.doi
                     raise _PublisherFound
                 # Otherwise, start reading the content
                 else:
@@ -744,7 +744,7 @@ class DOI():
                             if match and regexKeyword[1] in match.group(1):
                                 publisher = pname
                                 if publisher in ["wiley", "tandf", "annrev"]:
-                                    identifier = doi
+                                    identifier = self.doi
                                 elif publisher in ["elsevier"]:
                                     identifier = match.group(1)
                                 elif publisher in ["rsc"]:

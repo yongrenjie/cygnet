@@ -29,13 +29,13 @@ async def autosave():
             if len(_g.articleList) != 0 and l != 0:
                 _debug(f"autosave: found {l} change{_p(l)}: "
                        f"{' '.join(_g.changes)}")
-                fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
+                fileio.write_articles(_g.articleList, _g.currentPath / "peep.yaml")
                 _debug("autosave complete")
                 _g.changes = []
     except asyncio.CancelledError:
         # If the program is quit, save one last time before exiting
         if len(_g.articleList) != 0:
-            fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
+            fileio.write_articles(_g.articleList, _g.currentPath / "peep.yaml")
             _debug("exit save complete, exiting autosave task")
 
 

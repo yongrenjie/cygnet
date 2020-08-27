@@ -21,9 +21,8 @@ import prompt_toolkit as pt
 
 from . import fileio
 from . import listprint
-from .peepcls import Article, DOI, Spinner
-from . import refMgmt
 from . import backup
+from .peepcls import Article, DOI, Spinner
 from ._shared import *
 
 
@@ -39,7 +38,7 @@ def cli_cd(args):
     Description
     -----------
     Changes the current working directory to the given directory, then attempts
-    to read in a database from a db.yaml file.
+    to read in a database from a peep.yaml file.
 
     When a new database is read in, the references will be sorted by year. The
     undo history will also be cleared.
@@ -70,16 +69,16 @@ def cli_cd(args):
     # Otherwise, save the previous article list first (if there is any)
     if _g.articleList and _g.currentPath and _g.changes != []:
         _g.changes = []
-        fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
+        fileio.write_articles(_g.articleList, _g.currentPath / "peep.yaml")
 
     # Change the path
     _g.previousPath, _g.currentPath = _g.currentPath, p.resolve()
 
     # Try to read in the yaml file, if it exists
     try:
-        new_articles = fileio.read_articles(p / "db.yaml")
+        new_articles = fileio.read_articles(p / "peep.yaml")
     except yaml.YAMLError:
-        _error(f"cd: A db.yaml file was found in {p}, "
+        _error(f"cd: A peep.yaml file was found in {p}, "
                "but it contained invalid YAML.")
     except FileNotFoundError:
         # Clear out existing articles, if any
@@ -111,7 +110,7 @@ def cli_write(args):
     that in practice the need for this function should not arise often.
     """
     if _g.articleList != []:
-        fileio.write_articles(_g.articleList, _g.currentPath / "db.yaml")
+        fileio.write_articles(_g.articleList, _g.currentPath / "peep.yaml")
         _g.changes = []
     else:
         return _error("write: no articles loaded")
