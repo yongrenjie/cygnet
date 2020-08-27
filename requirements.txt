@@ -1,0 +1,4 @@
+unidecode
+pyyaml
+prompt_toolkit
+aiohttp
