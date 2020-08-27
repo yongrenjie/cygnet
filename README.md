@@ -2,6 +2,10 @@
 
 An extremely minimalistic reference manager written in Python 3.
 
+Install:
+
+    pip install peeplatex
+
 Package dependencies:
  - `aiohttp`
  - `prompt_toolkit`
@@ -38,23 +42,19 @@ except Exception as e:
 vim.command("let citation='{}'".format(citation))
 EOF
 if citation != "error"
-    " twiddle with empty lines before citation
     let lineno = line(".")
-    if lineno != 1
-        let prevline = getline(lineno - 1)
-        if !empty(trim(prevline))
-            let x = append(lineno - 1, "")
-        endif
+    " twiddle with empty lines before citation
+    if !empty(trim(getline(line(".") - 1)))
+        let x = append(line(".") - 1, "")
+        let lineno += 1
     endif
-    " delete the line with the citation
-    delete _
-    " put the citation
-    put! =citation | redraw
+    " replace the line with the citation
+    put =citation | redraw
     " twiddle with empty lines after citation
     if !empty(trim(getline(line(".") + 1)))
         let x = append(line("."), "")
-        redraw
     endif
+    execute lineno .. " delete _"
 else
     redraw | echohl ErrorMsg | echo "invalid DOI " .. doi | echohl None
 endif

@@ -23,14 +23,12 @@ from copy import deepcopy
 from operator import itemgetter, attrgetter
 from collections import deque
 
-
 import aiohttp
+
+from ._version import __version__
 
 
 class _g():
-    # Programme information
-    versionNo = "0.2"
-
     ### Global variables used to store the state of the programme.
     # List of dictionaries, each containing a single article.
     articleList = []

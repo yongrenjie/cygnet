@@ -13,6 +13,7 @@ import prompt_toolkit as pt
 
 from . import commands
 from ._shared import *
+from ._version import __version__
 
 
 class peepPrompt():
@@ -38,7 +39,7 @@ class peepPrompt():
     intro = (
         f"\n{_g.ansiHelpYellow}"
         "/----------------------------------------------------------------\\\n"
-        f"| {_g.ansiBold}PeepLaTeX v{_g.versionNo:<13s}{_g.ansiReset}{_g.ansiHelpYellow}                                       |\n"
+        f"| {_g.ansiBold}PeepLaTeX v{__version__:<13s}{_g.ansiReset}{_g.ansiHelpYellow}                                       |\n"
         "| Available commands:                                            |\n"
         "| ----------------                                               |\n"
         "| r[ead] a file         w[rite] to a file                        |\n"

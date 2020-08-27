@@ -3,9 +3,12 @@ import setuptools
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
+# Grab the version number without importing penguins.
+exec(open('peeplatex/_version.py').read())
+
 setuptools.setup(
     name="peeplatex",
-    version="0.0.1",
+    version=__version__,
     author="Jonathan Yong",
     author_email="yongrenjie@gmail.com",
     description="Minimalistic command-line reference manager",
