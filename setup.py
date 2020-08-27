@@ -23,7 +23,7 @@ setuptools.setup(
     ],
     # Requirements
     python_requires='>=3.7',
-    requires=[
+    install_requires=[
         "prompt_toolkit",
         "aiohttp",
         "unidecode",
