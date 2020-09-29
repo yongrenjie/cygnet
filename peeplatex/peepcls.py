@@ -264,6 +264,7 @@ class Article():
             journal_initials = "".join(c for c in self.journal_short
                                        if c.isupper())
             ref_identifier = f"{author_decoded}{self.year}{journal_initials}"
+            ref_identifier = "".join(ref_identifier.split())  # remove spaces
             # Author names in bib style
             author_names = " and ".join(self.format_authors("bib"))
             journal = self.journal_short.replace(". ", ".\\ ")
@@ -472,6 +473,33 @@ class Article():
 
         return _ret.SUCCESS
 
+    def make_haystack(self):
+        """
+        Returns a list of strings to use in searching. See search() for the
+        implementation.
+        """
+        journal_data = [" ".join(self.format_authors(style="full")),
+                        self.journal_long,
+                        self.journal_short,
+                        "".join(c for c in self.journal_short if c.isupper()),
+                        self.title]
+        return [unidecode(data) for data in journal_data]
+
+    def search(self, *queries):
+        """
+        Returns a list of booleans indicating whether the given queries were
+        found in the article metadata.
+
+        This is a VERY crude implementation, but it should suffice for now.
+
+        queries should be an (unpacked) list of compiled regex objects.
+        """
+        haystack = self.make_haystack()
+        # re.search() returns a match object or None. The call to any() will
+        # cast everything to booleans.
+        return [any([re.search(query, data) for data in haystack])
+                for query in queries]
+
 
 class DOI():
     def __init__(self, doi):
@@ -521,7 +549,8 @@ class DOI():
             # Fetch the data from CrossRef
             async with session.get(crossref_url) as resp:
                 d = await resp.json()
-        except aiohttp.client_exceptions.ContentTypeError:
+        except (aiohttp.client_exceptions.ContentTypeError,
+                aiohttp.client_exceptions.ClientResponseError):
             # Lookup failed. But we can't just pass _ret.FAILURE, because we need
             # to know which doi caused the error. So we create a blank Article with
             # only the DOI field populated (everything else is by default set to

@@ -45,8 +45,6 @@ class peepPrompt():
         "| r[ead] a file         w[rite] to a file                        |\n"
         "|                                                                |\n"
         "| l[ist] all articles   so[rt] articles     s[earch] in articles |\n"
-        "|                                           ^^^^^^^^^^^^^^^^^^^^ |\n"
-        "|                                              NOT IMPLEMENTED   |\n"
         "|                                                                |\n"
         "| a[dd] a DOI           d[elete] a ref      e[dit] a ref         |\n"
         "| c[ite] a ref          u[pdate] a ref                           |\n"
@@ -74,9 +72,11 @@ class peepPrompt():
         # assume here that there is no other legitimate uses for
         # escaped spaces, apart from file names.
         line = [l.replace("\\ ", " ") for l in line]
-        # Replace other escaped characters.
-        for escapedChar, char in _g.pathEscapes:
-            line = [l.replace(escapedChar, char) for l in line]
+        # Replace other escaped characters, BUT only if the command is not
+        # "search" (for which we accept regex patterns as arguments).
+        if line[0] not in ["s", "se", "sea", "sear", "searc", "search"]:
+            for escapedChar, char in _g.pathEscapes:
+                line = [l.replace(escapedChar, char) for l in line]
         # Separate into command + arguments.
         cmd, args = line[0], line[1:]
         # Remove empty arguments.
@@ -167,7 +167,7 @@ class peepPrompt():
                             _saveHist(cmd, args)
                         await commands.cli_update(args, help=help)
                     elif cmd in ["s", "se", "search"]:               # SEARCH
-                        _error("it's not been implemented yet...")
+                        commands.cli_search(args, help=help)
                     elif cmd in ["so", "sor", "sort"]:               # SORT
                         if help is False:
                             _saveHist(cmd, args)

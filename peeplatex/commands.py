@@ -7,6 +7,7 @@ functions in the programme, as the interface is designed SOLELY for command
 line usage!
 """
 
+import re
 import subprocess
 import shutil
 import asyncio
@@ -166,6 +167,72 @@ def cli_list(args):
         listprint.print_list(articles, refnos, max_auth)
     except ValueError as e:
         return _error(f"list: {str(e)}")
+
+
+@_helpdeco
+def cli_search(args):
+    """
+    *** search ***
+
+    Usage
+    -----
+    s[earch] query[...]
+
+    Description
+    -----------
+    Performs a case-insensitive search for articles whose authors or titles
+    contain the given queries, then lists articles which were found. Special
+    characters are converted to ASCII equivalents, so a search for "jose" will
+    also match papers written by "José".
+
+    If more than one query is given, will attempt to find articles containing
+    ALL queries. If none are found, then will return a list of articles
+    containing at least one of the queries.
+
+    VERY crude.
+    """
+    result_flag = "NONE"   # means no articles were found.
+
+    # the arguments are entered by the user. We use re.compile() to turn them
+    # into regexes.
+    queries = [re.compile(arg, flags=re.IGNORECASE) for arg in args]
+    found_refnos = []
+    for refno, article in enumerate(_g.articleList, start=1):
+        if all(article.search(*queries)):
+            # all queries were found.
+            found_refnos.append(refno)
+            result_flag = "ALL"
+            # means articles were found matching all queries
+
+    if found_refnos == [] and len(queries) > 1:
+        # loosen search criteria. Just look for at least one query, instead of
+        # all.
+        for refno, article in enumerate(_g.articleList, start=1):
+            if any(article.search(*queries)):
+                found_refnos.append(refno)
+                result_flag = "ANY"
+                # means articles were found matching at least one query
+
+    # if any articles were found...
+    if len(found_refnos) > 0:
+        found_articles = [_g.articleList[r - 1] for r in found_refnos]
+        listprint.print_list(found_articles, found_refnos, max_auth=0)
+    # let the user know accordingly
+    if result_flag == "NONE":
+        print(f"{_g.ansiTitleBlue}search: no articles matching the search"
+              f" query were found{_g.ansiReset}")
+    elif result_flag == "ANY":
+        print(f"{_g.ansiTitleBlue}search: {len(found_refnos)}"
+              f" article{_p(found_refnos)} matching at least one search query"
+              f" {_p(found_refnos, 'was', 'were')} found{_g.ansiReset}")
+    elif result_flag == "ALL" and len(queries) > 1:
+        print(f"{_g.ansiTitleBlue}search: {len(found_refnos)}"
+              f" article{_p(found_refnos)} matching all search queries"
+              f" {_p(found_refnos, 'was', 'were')} found{_g.ansiReset}")
+    elif result_flag == "ALL" and len(queries) == 1:
+        print(f"{_g.ansiTitleBlue}search: {len(found_refnos)}"
+              f" article{_p(found_refnos)} matching the search query"
+              f" {_p(found_refnos, 'was', 'were')} found{_g.ansiReset}")
 
 
 @_helpdeco
@@ -763,13 +830,13 @@ async def cli_addpdf(args):
     command. You have to delete the PDF first (using 'dp'), then re-add the new
     PDF.
     """
-    if _g.articlelist == []:
+    if _g.articleList == []:
         return _error("addpdf: no articles have been loaded")
 
     abbrevs = {"pdf": "p", "si": "s"}
     try:
         refnos, formats = parse_refnos_formats(args, abbrevs=abbrevs)
-    except argumenterror as e:
+    except ArgumentError as e:
         return _error(f"addpdf: {str(e)}")
     if len(refnos) == 0:
         return _error("addpdf: no references selected")
