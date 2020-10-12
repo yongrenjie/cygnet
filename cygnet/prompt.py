@@ -39,7 +39,7 @@ class peepPrompt():
     intro = (
         f"\n{_g.ansiHelpYellow}"
         "/----------------------------------------------------------------\\\n"
-        f"| {_g.ansiBold}PeepLaTeX v{__version__:<13s}{_g.ansiReset}{_g.ansiHelpYellow}                                       |\n"
+        f"| {_g.ansiBold}Cygnet v{__version__:<16s}{_g.ansiReset}{_g.ansiHelpYellow}                                       |\n"
         "| Available commands:                                            |\n"
         "| ----------------                                               |\n"
         "| r[ead] a file         w[rite] to a file                        |\n"

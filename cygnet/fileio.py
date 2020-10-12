@@ -22,7 +22,7 @@ def read_articles(fname):
     Raises:
         FileNotFoundError: If the file does not exist.
         yaml.YAMLError   : If the file is not valid YAML, or it isn't in the
-                           appropriate format for PeepLaTeX.
+                           appropriate format for Cygnet.
     """
     if not fname.is_file():
         raise FileNotFoundError(f"The file {fname} does not exist.")

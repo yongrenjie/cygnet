@@ -34,7 +34,7 @@ def main():
     # Parse sys.argv
     parser = argparse.ArgumentParser()
     parser.add_argument("path",
-                        help=("Path to start PeepLaTeX in. "
+                        help=("Path to start Cygnet in. "
                               "Defaults to current working directory."),
                         nargs='?',
                         default=Path.cwd())
@@ -72,7 +72,7 @@ def main():
         loop.run_until_complete(main_coro())
         loop.close()
     else:
-        _error(f"PeepLaTeX: directory {args.path} does not exist")
+        _error(f"Cygnet: directory {args.path} does not exist")
 
 
 async def main_coro():

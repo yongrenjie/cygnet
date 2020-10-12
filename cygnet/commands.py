@@ -443,7 +443,7 @@ def cli_edit(args):
         try:
             edited_articles = fileio.read_articles(tempfile)
         except yaml.YAMLError:
-            return _error("edit: invalid YAML syntax for PeepLaTeX "
+            return _error("edit: invalid YAML syntax for Cygnet "
                           "articles")
         for (edited_article, refno) in zip(edited_articles, refnos):
             # Before replacing it, make sure that the PDF/SIs are moved to the

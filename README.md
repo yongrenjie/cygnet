@@ -1,10 +1,10 @@
-# peeplatex
+# cygnet
 
 An extremely minimalistic reference manager written in Python 3.
 
 Install:
 
-    pip install peeplatex
+    pip install cygnet
 
 Package dependencies:
  - `aiohttp`
@@ -14,10 +14,10 @@ Package dependencies:
 
 ## Function for autoexpanding DOIs in Vim
 
-After installing `peeplatex` citations can be generated (in Python) using
+After installing `cygnet` citations can be generated (in Python) using
 
 ```python
-from peeplatex.peepcls import DOI
+from cygnet.peepcls import DOI
 DOI(doi).to_citation(type="bib")
 ```
 
@@ -32,7 +32,7 @@ let doi = expand("<cWORD>")
 echo "expanding DOI " .. doi .. "..."
 python3<<EOF
 import vim
-from peeplatex import cite
+from cygnet import cite
 # get the citation
 doi = vim.eval('expand("<cWORD>")')
 try:

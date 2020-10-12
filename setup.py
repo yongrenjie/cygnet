@@ -3,18 +3,18 @@ import setuptools
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-# Grab the version number without importing penguins.
-exec(open('peeplatex/_version.py').read())
+# Grab the version number without importing cygnet.
+exec(open('cygnet/_version.py').read())
 
 setuptools.setup(
-    name="peeplatex",
+    name="cygnet",
     version=__version__,
     author="Jonathan Yong",
     author_email="yongrenjie@gmail.com",
     description="Minimalistic command-line reference manager",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yongrenjie/peeplatex",
+    url="https://github.com/yongrenjie/cygnet",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -31,6 +31,6 @@ setuptools.setup(
     ],
     # Entry points (command-line)
     entry_points = {
-        'console_scripts': ['peep=peeplatex.startup:main'],
+        'console_scripts': ['peep=cygnet.startup:main'],
     }
 )
