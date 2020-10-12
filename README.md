@@ -32,11 +32,11 @@ let doi = expand("<cWORD>")
 echo "expanding DOI " .. doi .. "..."
 python3<<EOF
 import vim
-from peeplatex.peepcls import DOI
+from peeplatex import cite
 # get the citation
 doi = vim.eval('expand("<cWORD>")')
 try:
-    citation = DOI(doi).to_citation(type="bib")
+    citation = cite(doi, type="bib")
     citation = citation.replace("'", "''")
 except Exception as e:
     citation = "error"
