@@ -17,8 +17,8 @@ Package dependencies:
 After installing `cygnet` citations can be generated (in Python) using
 
 ```python
-from cygnet.peepcls import DOI
-DOI(doi).to_citation(type="bib")
+import cygnet
+cygnet.cite(doi, type="bib")
 ```
 
 where `doi` is the DOI of the article given as a string. (Try it in a REPL!)
