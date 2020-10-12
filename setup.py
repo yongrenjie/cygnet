@@ -31,6 +31,6 @@ setuptools.setup(
     ],
     # Entry points (command-line)
     entry_points = {
-        'console_scripts': ['peep=cygnet.startup:main'],
+        'console_scripts': ['cygnet=cygnet.startup:main'],
     }
 )
