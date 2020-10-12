@@ -195,8 +195,8 @@ class Article():
         Arguments
         ---------
         type : str
-            "bib", "markdown", "Markdown", "doi", or "word". The abbreviations
-            "b", "m", "M", "d", and "w" are also allowed.
+            "bib", "doi", "rst", "Rst", "markdown", "Markdown", "word", or
+            "Word". The first letters of each are allowed as abbreviations.
 
         Returns
         -------
@@ -212,53 +212,8 @@ class Article():
         # up.) So we might as well escape them generally.
         doi_url = f"https://doi.org/{urllib.parse.quote(self.doi)}"
 
-        # Just DOI
-        if type in ["doi", "d"]:
-            return self.doi
-
-        # Markdown short
-        elif type in ["markdown", "m"]:
-            if self.issue:
-                return (f"*{self.journal_short}* **{self.year}**, "
-                        f"*{self.volume}* ({self.issue}), "
-                        f"{pages_with_endash}. "
-                        f"[DOI: {self.doi}]({doi_url}).")
-            else:
-                return (f"*{self.journal_short}* **{self.year}**, "
-                        f"*{self.volume},* "
-                        f"{pages_with_endash}. "
-                        f"[DOI: {self.doi}]({doi_url}).")
-
-        # Markdown long
-        elif type in ["Markdown", "M"]:
-            if self.issue:
-                return (f"{acs_authors} {self.title}. "
-                        f"*{self.journal_short}* **{self.year}**, "
-                        f"*{self.volume}* ({self.issue}), "
-                        f"{pages_with_endash}. "
-                        f"[DOI: {self.doi}]({doi_url}).")
-            else:
-                return (f"{acs_authors} {self.title}. "
-                        f"*{self.journal_short}* **{self.year}**, "
-                        f"*{self.volume},* "
-                        f"{pages_with_endash}. "
-                        f"[DOI: {self.doi}]({doi_url}).")
-
-        # Word
-        elif type in ["word", "w"]:
-            if self.issue:
-                return (f"{acs_authors} "
-                        f"{self.journal_short} {self.year}, "
-                        f"{self.volume} ({self.issue}), "
-                        f"{pages_with_endash}.")
-            else:
-                return (f"{acs_authors} "
-                        f"{self.journal_short} {self.year}, "
-                        f"{self.volume}, "
-                        f"{pages_with_endash}.")
-
         # BibLaTeX
-        elif type in ["bib", "b"]:
+        if type in ["bib", "b"]:
             # Create (hopefully) unique identifier
             author_decoded = unidecode(self.authors[0]["family"])
             journal_initials = "".join(c for c in self.journal_short
@@ -290,6 +245,50 @@ class Article():
             for char in _g.unicodeLatexDict:
                 s = s.replace(char, _g.unicodeLatexDict[char])
             return s
+
+        # Just DOI
+        if type in ["doi", "d"]:
+            return self.doi
+
+        # The rest all have a long vs short type.
+        # Discern long vs short type
+        long = False
+        if type[0].upper() == type[0]:
+            long = True
+            type = type.lower()
+
+        # reStructuredText
+        if type in ["rst", "r"]:
+            author_title = f"{acs_authors} {self.title}. " if long else ""
+            vol_issue = (f"*{self.volume}* ({self.issue}), " if self.issue
+                         else f"*{self.volume},* ")
+            return (author_title
+                    + f"*{self.journal_short}* **{self.year},** "
+                    + vol_issue
+                    + f"{pages_with_endash}. "
+                    + f"`DOI: {self.doi} <{doi_url}>`_")
+
+        # Markdown
+        if type in ["markdown", "m"]:
+            author_title = f"{acs_authors} {self.title}. " if long else ""
+            vol_issue = (f"*{self.volume}* ({self.issue}), " if self.issue
+                         else f"*{self.volume},* ")
+            return (author_title
+                    + f"*{self.journal_short}* **{self.year},** "
+                    + vol_issue
+                    + f"{pages_with_endash}. "
+                    + f"[DOI: {self.doi}]({doi_url})")
+
+        # Word
+        elif type in ["word", "w"]:
+            author_title = f"{acs_authors} {self.title}. " if long else ""
+            vol_issue = (f"{self.volume} ({self.issue}), " if self.issue
+                         else f"{self.volume}, ")
+            return (author_title
+                    + f"{self.journal_short} {self.year}, "
+                    + vol_issue
+                    + f"{pages_with_endash}.")
+
         else:
             raise ValueError("Invalid citation type '{type}' given")
 
@@ -666,8 +665,7 @@ class DOI():
         doi : str
             DOI to look up.
         type : str
-            "bib", "markdown", "Markdown", "doi", or "word". The abbreviations
-            "b", "m", "M", "d", and "w" are also allowed.
+            See Article.to_citation() for a list of allowed types.
 
         Returns
         -------

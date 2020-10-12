@@ -341,9 +341,15 @@ async def cli_cite(args):
         'bib' or 'b' (default) - BibLaTeX. The article identifier is
                                  constructed by concatenating the first author,
                                  year, and journal.
-        'markdown' or 'm'      - Markdown form of 'short' ACS style citation.
-        'Markdown' or 'M'      - Markdown form of 'long' ACS style citation.
         'doi' or 'd'           - Just the DOI.
+
+    For the following formats, the first letter can also be capitalised in
+    order to include author names. For example, 'Rst' or 'R' will give the
+    reStructuredText citation with author names. Unless otherwise specified,
+    all of these output citations according to the ACS Style Guide.
+
+        'rst' or 'r'           - reStructuredText.
+        'markdown' or 'm'      - Markdown.
         'word' or 'w'          - A suitable style for Microsoft Word (but no
                                  formatting such as bold/italics).
 
