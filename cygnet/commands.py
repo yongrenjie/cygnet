@@ -23,7 +23,7 @@ import prompt_toolkit as pt
 from . import fileio
 from . import listprint
 from . import backup
-from .peepcls import Article, DOI, Spinner
+from .cygcls import Article, DOI, Spinner
 from ._shared import *
 
 

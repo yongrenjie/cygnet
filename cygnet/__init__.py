@@ -1,4 +1,4 @@
-from .peepcls import DOI
+from .cygcls import DOI
 
 
 def cite(doi, type="bib"):

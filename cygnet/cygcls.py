@@ -1,5 +1,5 @@
 """
-peepcls.py
+cygcls.py
 ----------
 
 Contains the Article, DOI, and Spinner classes.
