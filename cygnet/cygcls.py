@@ -203,7 +203,9 @@ class Article():
         The citation as a string.
         """
         acs_authors = "; ".join(self.format_authors("acs"))
-        pages_with_endash = self.pages.replace("-", "\u2013")
+        # Some articles don't come with pages. :-(
+        pages_with_endash = (self.pages.replace("-", "\u2013") if self.pages
+                             else "")
         # Actually, not using quote() generally gives results that work fine.
         # The only issue is that when using Markdown URLs with parentheses in
         # Jupyter notebooks, the conversion to HTML gets it wrong, thinking
