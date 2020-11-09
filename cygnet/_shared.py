@@ -142,7 +142,7 @@ class _g():
 
     # Dictionary containing correct (as listed in CASSI) abbreviations of some journals.
     journalReplacements = {
-        "Proceedings of the National Academy of Sciences": "Proc. Acad. Natl. Sci. U. S. A.",
+        "Proceedings of the National Academy of Sciences": "Proc. Natl. Acad. Sci. U. S. A.",
         "The Journal of Chemical Physics": "J. Chem. Phys.",
         "Journal of Magnetic Resonance": "J. Magn. Reson.",
         "Journal of Magnetic Resonance (1969)": "J. Magn. Reson.",
@@ -155,6 +155,7 @@ class _g():
         "J Biomol NMR": "J. Biomol. NMR",
         "Annual Reports on NMR Spectroscopy": "Annu. Rep. NMR Spectrosc.",
         "Angewandte Chemie International Edition": "Angew. Chem. Int. Ed.",
+        "Nat Commun": "Nat. Commun.",
         }
 
     # Dictionary of escaped characters in paths.
