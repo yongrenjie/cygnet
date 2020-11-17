@@ -87,11 +87,15 @@ class Article():
             family_name = author["family"]
             given_names = author["given"]
             if style == "display":
-                return ("".join(n[0] for n in given_names.split())
+                return ("".join(n[0] for n in re.split(r"[\s-]", given_names))
                         + " " + author["family"])
             elif style == "acs":
-                return (author["family"] + ", "
-                        + ". ".join(n[0] for n in given_names.split()) + ".")
+                # "Jean-Baptiste Simon" -> [["Jean", "Baptiste"], ["Simon"]]
+                split_both = [name.split('-') for name in given_names.split()]
+                # [["Jean", "Baptiste"], ["Simon"]] -> "J.-B. S"
+                joined_both = ". ".join([".-".join(n[0] for n in names)][0]
+                                         for names in split_both)
+                return (author["family"] + ", " + joined_both + ".")
             elif style == "bib":
                 s = author["family"] + ", " + author["given"]
                 return s.replace(". ", ".\\ ")  # Must use control spaces
