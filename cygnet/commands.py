@@ -727,6 +727,7 @@ async def cli_delete(args):
     if ans.strip().lower() in ["", "y", "yes"]:
         # Sort refnos in descending order so that we don't have earlier
         # deletions affecting later ones!!!
+        refnos = list(refnos)   # convert from set to list
         refnos.sort(reverse=True)
         for refno in refnos:
             article = _g.articleList[refno - 1]
@@ -778,11 +779,12 @@ async def cli_import(args=None):
     yes, no = 0, 0
     # Process every PDF file found.
     for file in files:
-        # Try to get the DOI (as a string, hence the .doi at the end)
-        doi = DOI.from_pdf(file).doi
+        # Try to get the DOI
+        doi = DOI.from_pdf(file)
         if doi == _ret.FAILURE:
             no += 1
         else:
+            doi = doi.doi
             print(f"import: detected DOI {doi} for PDF '{file}'")
             # Check whether it's already in the database
             for refno, article in enumerate(_g.articleList, start=1):
