@@ -156,6 +156,7 @@ class _g():
         "Annual Reports on NMR Spectroscopy": "Annu. Rep. NMR Spectrosc.",
         "Angewandte Chemie International Edition": "Angew. Chem. Int. Ed.",
         "Nat Commun": "Nat. Commun.",
+        "Sci Rep": "Sci. Rep.",
         }
 
     # Dictionary of escaped characters in paths.
