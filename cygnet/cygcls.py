@@ -86,21 +86,30 @@ class Article():
             # Otherwise...
             family_name = author["family"]
             given_names = author["given"]
+
+            # deal with a pathological case, 10.1016/j.jmr.2018.02.009
+            ns = given_names.split()
+            for i, name in enumerate(ns):
+                if i >= 1 and name.startswith('-'):
+                    this_name = ns.pop(i)
+                    ns[i - 1] += this_name
+            given_names = " ".join(ns)
+
             if style == "display":
                 return ("".join(n[0] for n in re.split(r"[\s-]", given_names))
-                        + " " + author["family"])
+                        + " " + family_name)
             elif style == "acs":
                 # "Jean-Baptiste Simon" -> [["Jean", "Baptiste"], ["Simon"]]
                 split_both = [name.split('-') for name in given_names.split()]
                 # [["Jean", "Baptiste"], ["Simon"]] -> "J.-B. S"
                 joined_both = ". ".join([".-".join(n[0] for n in names)][0]
                                          for names in split_both)
-                return (author["family"] + ", " + joined_both + ".")
+                return (family_name + ", " + joined_both + ".")
             elif style == "bib":
-                s = author["family"] + ", " + author["given"]
+                s = family_name + ", " + given_names
                 return s.replace(". ", ".\\ ")  # Must use control spaces
             elif style == "full":
-                return author["given"] + " " + author["family"]
+                return given_names + " " + family_name
             # Otherwise, grumble.
             else:
                 raise ValueError(f"Invalid value '{style}' for style.")
