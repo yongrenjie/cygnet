@@ -161,6 +161,7 @@ class _g():
         "Journal of Molecular Biology": "J. Mol. Biol.",
         "Journal of Chemical Informatics and Modeling": "J. Chem. Inf. Model.",
         "Journal of Computational Chemistry": "J. Comp. Chem.",
+        "Nat Rev Methods Primers": "Nat. Rev. Methods Primers",
         }
 
     # Dictionary of escaped characters in paths.
