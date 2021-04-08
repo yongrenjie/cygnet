@@ -157,6 +157,10 @@ class _g():
         "Angewandte Chemie International Edition": "Angew. Chem. Int. Ed.",
         "Nat Commun": "Nat. Commun.",
         "Sci Rep": "Sci. Rep.",
+        "Nucleic Acids Research": "Nucleic Acids Res.",
+        "Journal of Molecular Biology": "J. Mol. Biol.",
+        "Journal of Chemical Informatics and Modeling": "J. Chem. Inf. Model.",
+        "Journal of Computational Chemistry": "J. Comp. Chem.",
         }
 
     # Dictionary of escaped characters in paths.
