@@ -106,7 +106,7 @@ class peepPrompt():
 
     async def loop(self):
         print(self.intro)
-        with pt.patch_stdout.patch_stdout():
+        with pt.patch_stdout.patch_stdout(raw=True):
             while True:
                 try:
                     line = await self.session.prompt_async(self.make_message(),

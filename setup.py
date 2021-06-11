@@ -24,7 +24,7 @@ setuptools.setup(
     # Requirements
     python_requires='>=3.7',
     install_requires=[
-        "prompt_toolkit",
+        "prompt_toolkit>=3.0.11",
         "aiohttp",
         "unidecode",
         "pyyaml"
